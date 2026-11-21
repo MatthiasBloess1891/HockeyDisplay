@@ -1,4 +1,6 @@
 #include "WS_WIFI.h"
+#include "HD_Web.h"
+#include <ArduinoOTA.h>
 
 // The name and password of the WiFi access point
 const char *ssid = STASSID;                
@@ -170,7 +172,7 @@ void handleRoot() {
     "        <h1>ESP32-S3-POE-ETH-8DI-8RO</h1>"+
     "    </div>"+
     "    <nav>" +
-    "        <a href=\"/\" id=\"relayControlLink\" class=\"relayControlActive\">Relay Control</a>" +  
+    "        <a href=\"/relay\" id=\"relayControlLink\" class=\"relayControlActive\">Relay Control</a>" +  
     "        <a href=\"/RTC_Event\" id=\"rtcEventLink\" class=\"rtcEventActive\">RTC Event</a>" + 
     "    </nav>" +
     "    <div class=\"container\">"+
@@ -424,7 +426,7 @@ void handleRTCPage() {
     "        <h1>ESP32-S3-POE-ETH-8DI-8RO</h1>" + 
     "    </div>" + 
     "    <nav>" + 
-    "        <a href=\"/\" id=\"relayControlLink\" class=\"relayControlActive\">Relay Control</a>" +  
+    "        <a href=\"/relay\" id=\"relayControlLink\" class=\"relayControlActive\">Relay Control</a>" +  
     "        <a href=\"/RTC_Event\" id=\"rtcEventLink\" class=\"rtcEventActive\">RTC Event</a>" +  
     "    </nav>" + 
     "    <div class=\"container\">" +  
@@ -627,7 +629,7 @@ void WIFI_Init()
   xTaskCreatePinnedToCore(
     WifiStaTask,    
     "WifiStaTask",   
-    4096,                
+    8192,                 // groesserer Stack fuer Webseiten und OTA                
     NULL,                 
     3,                   
     NULL,                 
@@ -636,11 +638,36 @@ void WIFI_Init()
 }
 
 
+// Mit dem WLAN verbinden, auf Wunsch mit fester IP-Adresse (siehe WS_Information.h)
+static void WIFI_Connect() {
+#if HD_USE_STATIC_IP
+  WiFi.config(IPAddress(HD_IP), IPAddress(HD_GATEWAY), IPAddress(HD_SUBNET), IPAddress(HD_DNS));
+#endif
+  WiFi.setHostname(HD_HOSTNAME);
+  WiFi.begin(ssid, password);                         // Connect to the specified Wi-Fi network
+}
+
+// Firmware-Update ueber das Netzwerk (Arduino IDE: Werkzeuge > Port > Netzwerk-Ports)
+static void OTA_Init() {
+  ArduinoOTA.setHostname(HD_HOSTNAME);
+  ArduinoOTA.setPassword(OTA_PASSWORD);
+  ArduinoOTA.onStart([]() {
+    printf("OTA: Update startet\r\n");
+    RGB_Light(0, 0, 60);
+  });
+  ArduinoOTA.onEnd([]() {
+    printf("OTA: Update fertig, Neustart\r\n");
+  });
+  ArduinoOTA.begin();
+  printf("OTA bereit: %s\r\n", HD_HOSTNAME);
+}
+
 void WifiStaTask(void *parameter) {
   uint8_t Count = 0;
+  bool Server_Started = false;
   WiFi.mode(WIFI_STA);                                   
-  WiFi.setSleep(true);      
-  WiFi.begin(ssid, password);                         // Connect to the specified Wi-Fi network
+  WiFi.setSleep(false);                               // kein Stromsparen: schnellere Antworten von Webseite und OTA
+  WIFI_Connect();
   while(1){
     if(WiFi.status() != WL_CONNECTED)
     {
@@ -657,7 +684,7 @@ void WifiStaTask(void *parameter) {
         vTaskDelay(pdMS_TO_TICKS(100));
         WiFi.mode(WIFI_STA);
         vTaskDelay(pdMS_TO_TICKS(100));
-        WiFi.begin(ssid, password);
+        WIFI_Connect();
       }
     }
     else{
@@ -668,7 +695,10 @@ void WifiStaTask(void *parameter) {
       printf("%s\r\n", ipStr);
       RGB_Open_Time(0, 50, 0, 1000, 0); 
       
-      server.on("/", handleRoot);            // Relay Control page
+      if(!Server_Started){                   // Seiten nur einmal anmelden, nicht bei jeder Neuverbindung
+      Server_Started = true;
+      HD_Web_Register(server);               // Anzeige (/), RS485-Monitor (/monitor) und API
+      server.on("/relay", handleRoot);       // Relay Control page
       server.on("/getData", handleGetData);
       server.on("/Switch1", handleSwitch1);
       server.on("/Switch2", handleSwitch2);
@@ -688,10 +718,13 @@ void WifiStaTask(void *parameter) {
       
       server.begin(); 
       printf("Web server started\r\n"); 
+      OTA_Init();
+      }
 
       while (WiFi.status() == WL_CONNECTED){
         server.handleClient(); // Processing requests from clients
-        vTaskDelay(pdMS_TO_TICKS(10));
+        ArduinoOTA.handle();   // Firmware-Update ueber das Netzwerk
+        vTaskDelay(pdMS_TO_TICKS(5));
       }
     }
     vTaskDelay(pdMS_TO_TICKS(1000));
