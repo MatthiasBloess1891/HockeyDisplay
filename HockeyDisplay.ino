@@ -1,6 +1,6 @@
 #include <HardwareSerial.h>     // Reference the ESP32 built-in serial port library
 #include "WS_MQTT.h"
-#include "WS_Bluetooth.h"
+// #include "WS_Bluetooth.h"
 #include "WS_GPIO.h"
 #include "WS_Serial.h"
 #include "WS_RTC.h"
@@ -21,7 +21,7 @@ void setup() {
   SD_Init();
   Serial_Init();   // UART(RS485/CAN)
   MQTT_Init();// MQTT
-  Bluetooth_Init();// Bluetooth
+  // Bluetooth_Init();// Bluetooth
   ETH_Init();
   
   DIN_Init();                 // If you don't want to control the relay through DIN, change Relay_Immediate_Default to 0 in WS_DIN.h and re-burn the program
