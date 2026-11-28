@@ -118,7 +118,7 @@ function render(st) {
   else if (st.online) { dot.className = 'dot warn'; mode.textContent = 'Uhrzeit (Spielmodus beendet)'; hint.textContent = ''; }
   else {
     dot.className = 'dot'; mode.textContent = 'Uhrzeit (Bediengerät sendet nicht)';
-    hint.textContent = st.rx > 0 && st.frames === 0 ? 'Es kommen Bytes an, aber keine gültigen Telegramme. Bitte die Baudrate auf der Monitor-Seite prüfen.' : '';
+    hint.textContent = st.rx > 0 && st.frames === 0 ? 'Es kommen Bytes an, aber keine gültigen Telegramme. Bitte Verkabelung (A/B) und Baudrate prüfen.' : '';
   }
   document.getElementById('age').textContent = st.seen ? (st.age / 1000).toFixed(1).replace('.', ',') + ' s' : 'noch keines';
   document.getElementById('frames').textContent = st.frames;
@@ -185,14 +185,8 @@ static const char PAGE_MONITOR[] = R"HTML(<!DOCTYPE html>
     <button id="save">Als Textdatei speichern</button>
     <label><input type="checkbox" id="chg" checked> nur Änderungen</label>
     <label><input type="checkbox" id="unk"> nur unbekannte</label>
-    <label>Baudrate
-      <select id="baud">
-        <option>1200</option><option>2400</option><option>4800</option><option>9600</option>
-        <option>19200</option><option>38400</option><option>57600</option><option>115200</option>
-      </select>
-    </label>
   </div>
-  <div class="stats">Empfangene Bytes: <b id="rx">0</b> · gültige Telegramme: <b id="frames">0</b> · Prüfsummenfehler: <b id="err">0</b> · unvollständig: <b id="inc">0</b> · angezeigt: <b id="shown">0</b></div>
+  <div class="stats">Baudrate: <b id="baud">–</b> · empfangene Bytes: <b id="rx">0</b> · gültige Telegramme: <b id="frames">0</b> · Prüfsummenfehler: <b id="err">0</b> · unvollständig: <b id="inc">0</b> · angezeigt: <b id="shown">0</b></div>
   <div class="scroll" id="scroll">
     <table>
       <thead><tr><th>Nr.</th><th>Zeit [s]</th><th>Δ [ms]</th><th>Hex</th><th>ASCII</th><th>Bedeutung</th></tr></thead>
@@ -254,8 +248,7 @@ async function poll() {
     document.getElementById('frames').textContent = st.frames;
     document.getElementById('err').textContent = st.chkErr;
     document.getElementById('inc').textContent = st.incomplete;
-    const sel = document.getElementById('baud');
-    if (document.activeElement !== sel) sel.value = String(st.baud);
+    document.getElementById('baud').textContent = st.baud + ' 8N1';
     if (!paused) {
       const r = await (await fetch('/api/log?since=' + since, {cache: 'no-store'})).json();
       if (r.head < since) { since = 0; }                    // ESP32 wurde neu gestartet
@@ -268,7 +261,6 @@ document.getElementById('pause').onclick = e => { paused = !paused; e.target.tex
 document.getElementById('clear').onclick = () => { all = []; lastByKey = {}; prevT = null; redraw(); };
 document.getElementById('chg').onchange = redraw;
 document.getElementById('unk').onchange = redraw;
-document.getElementById('baud').onchange = async e => { await fetch('/api/baud?value=' + e.target.value); e.target.blur(); };
 document.getElementById('save').onclick = () => {
   const lines = all.filter(visible).map(f => [f.s, (f.t / 1000).toFixed(3), f.h, f.d].join('\t'));
   const a = document.createElement('a');
@@ -478,17 +470,6 @@ static void handleLog() {
   web->send(200, "application/json", json);
 }
 
-static void handleBaud() {
-  if (web->hasArg("value")) {
-    uint32_t baud = (uint32_t)strtoul(web->arg("value").c_str(), NULL, 10);
-    if (!RS485_SetBaud(baud)) {
-      web->send(400, "text/plain", "Baudrate nicht erlaubt");
-      return;
-    }
-  }
-  web->send(200, "text/plain", String(RS485_GetBaud()));
-}
-
 // Uhr der Anzeige stellen: /api/clock?d=TTMMJJHHMM
 static void handleClock() {
   String d = web->arg("d");
@@ -528,7 +509,6 @@ void HD_Web_Register(WebServer &srv) {
   srv.on("/monitor", handleMonitor);
   srv.on("/api/state", handleState);
   srv.on("/api/log", handleLog);
-  srv.on("/api/baud", handleBaud);
   srv.on("/uhr", handleClockPage);
   srv.on("/api/clock", handleClock);
 }

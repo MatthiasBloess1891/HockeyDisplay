@@ -31,7 +31,7 @@ Diese Datei hält den gesamten Wissensstand fest: Aufbau, Bedienung, das per Rev
 
 - Board: Waveshare ESP32-S3-POE-ETH-8DI-8RO (ESP32-S3, 16 MB Flash, PSRAM, Ethernet mit PoE, RS485, 8 Eingänge, 8 Relais)
 - RS485 liegt an UART1: TXD = GPIO 17, RXD = GPIO 18 (`WS_GPIO.h`)
-- Schnittstelle: 8N1. Die Baudrate ist auf der Monitor-Seite einstellbar und wird gespeichert, Startwert 9600 (`HD_DEFAULT_BAUD` in `WS_RS485.h`)
+- Schnittstelle: **19200 Baud, 8N1**. Die Baudrate steht fest im Code (`HD_BAUD` in `WS_RS485.h`)
 - Der ESP32 hängt parallel zu Bediengerät und Anzeige am Bus
 
 ## Einrichten und Kompilieren
@@ -80,7 +80,7 @@ git push                 # eigenen Stand hochladen
 | Adresse | Inhalt |
 | --- | --- |
 | `/` | Nachbau der Anzeige: Tore, Spielzeit, Viertel, Horn, Feld 0x26. Außerhalb des Spielmodus zeigt die Seite die Uhrzeit des Browsers. |
-| `/monitor` | Jedes Telegramm mit Zeitstempel, Abstand zum vorigen, Hex, ASCII und Klartext. Filter „nur Änderungen“ und „nur unbekannte“, Speichern als Textdatei, Baudrate umstellen. Vom ESP32 gesendete Telegramme sind blau. |
+| `/monitor` | Jedes Telegramm mit Zeitstempel, Abstand zum vorigen, Hex, ASCII und Klartext. Filter „nur Änderungen“ und „nur unbekannte“, Speichern als Textdatei. Vom ESP32 gesendete Telegramme sind blau. |
 | `/uhr` | Uhr der Anzeige stellen: zum nächsten Minutenwechsel mit der Browserzeit oder sofort mit einer eingetragenen Zeit. |
 | `/relay` | Relais-Seite der Waveshare-Demo |
 
@@ -88,7 +88,6 @@ git push                 # eigenen Stand hochladen
 | --- | --- |
 | `GET /api/state` | Zustand als JSON (Spielmodus, Zeit, Tore, Viertel, Horn, Zähler, Baudrate) |
 | `GET /api/log?since=<Nr>` | Telegramme ab der laufenden Nummer als JSON |
-| `GET /api/baud?value=<Baud>` | Baudrate umstellen und speichern |
 | `GET /api/clock?d=TTMMJJHHMM` | Uhr der Anzeige stellen. **Sendet auf dem RS485-Bus.** |
 
 Die Webseiten haben keinen Zugriffsschutz. Jeder im WLAN kann sie öffnen und die Uhr stellen.
@@ -181,7 +180,7 @@ Die Länge zählt alle Bytes nach dem Längenfeld, einschließlich `03` und BCC.
 | `HockeyDisplay.ino` | Start, ruft die Module der Waveshare-Demo auf |
 | `HD_Protocol.h/.cpp` | Dekoder, Zustand der Anzeige, Telegramm-Log, Aufbau von Sendetelegrammen. Ohne Arduino-Abhängigkeiten. |
 | `HD_Web.h/.cpp` | Webseiten und API |
-| `WS_RS485.h/.cpp` | UART, Mithör-Task, Baudrate, Senden des Uhr-Telegramms |
+| `WS_RS485.h/.cpp` | UART, Mithör-Task, Senden des Uhr-Telegramms |
 | `WS_WIFI.cpp` | WLAN, feste IP, Webserver, OTA, Relais-Seite der Demo |
 | `WS_Information.h` | Netzwerk-Einstellungen, MQTT-Daten der Demo |
 | `secrets.example.h` | Vorlage für `secrets.h` |
@@ -202,7 +201,6 @@ Der Test prüft alle Mitschnitte auf gültige Prüfsummen und vergleicht das erz
 ## Offene Punkte
 
 - **Uhr stellen an der echten Anzeige erproben:** ob die Anzeige das Telegramm ohne vorherige Startsequenz annimmt und ob sie die Sekunden dabei auf null setzt.
-- **Baudrate** der Anzeige hier eintragen, sobald sie bestätigt ist.
 - **Idle-Verhalten bestätigen:** Abstände der Wiederholungen im Monitor ablesen und prüfen, nach welcher Pause die Anzeige zurückschaltet.
 - **Lange Telegramme** (`SLK2`, `RN`, `R0`, `T0`) deuten.
 - **Feld 0x26** bestätigen (Strafzeiten?) und die Bedeutung der freien Positionen 0, 4, 8 und 12 klären.
@@ -219,3 +217,4 @@ Der Test prüft alle Mitschnitte auf gültige Prüfsummen und vergleicht das erz
 | 21.11.2026 | Bluetooth-Modul entfernt (Boardpaket 4.0.0) |
 | 21.11.2026 | Dekoder für das Protokoll, RS485-Monitor, Nachbau der Anzeige, feste IP, OTA, `secrets.h` |
 | 28.11.2026 | Telegramm zum Stellen von Datum und Uhrzeit ermittelt und dokumentiert, Seite `/uhr` und `/api/clock`, README angelegt |
+| 28.11.2026 | Baudrate fest auf 19200 gesetzt, Umstellung im Monitor und `/api/baud` entfernt |

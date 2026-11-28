@@ -11,7 +11,7 @@
  * der Uhr, und nur wenn das Bediengeraet nicht im Spielmodus sendet und der Bus ruhig ist.
  */
 
-#define HD_DEFAULT_BAUD   9600    // Startwert, laesst sich auf der Monitor-Seite umstellen (wird gespeichert)
+#define HD_BAUD           19200   // feste Baudrate der Anzeige, 8N1
 #define HD_BUS_IDLE_MS    100     // so lange muss der Bus vor dem Senden ruhig sein
 
 // Ergebnis von RS485_SendClock
@@ -23,7 +23,6 @@
 void     RS485_Init();                    // Schnittstelle oeffnen und Mithoer-Task starten
 void     RS485Task(void *parameter);
 uint32_t RS485_GetBaud();
-bool     RS485_SetBaud(uint32_t baud);    // Baudrate umstellen und dauerhaft speichern
 uint32_t RS485_RxBytes();                 // Anzahl bisher empfangener Bytes
 
 // Uhr der Anzeige stellen. frame/frameLen liefern das gesendete Telegramm zurueck (duerfen NULL sein)
