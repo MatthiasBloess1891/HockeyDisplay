@@ -15,6 +15,7 @@ void RS485_Init()                                             // Initializing se
 {
   hdMutex = xSemaphoreCreateMutex();
   HD_Reset();
+  HDG_Init();
 
   hdSerial.begin(HD_BAUD, SERIAL_8N1, RXD1, TXD1);           // gesendet wird nur in RS485_SendClock
   printf("RS485: Mithoeren mit %lu Baud 8N1\r\n", (unsigned long)HD_BAUD);
@@ -42,7 +43,7 @@ int RS485_SendClock(int day, int month, int year2, int hour, int minute, uint8_t
   for (int tries = 0; tries < 50; tries++) {                  // bis zu 0,5 s auf einen ruhigen Bus warten
     RS485_Lock();
     uint32_t now = millis();
-    if (HD_Online(now)) {                                     // Spielbetrieb: nicht dazwischenfunken
+    if (HD_Online(now) || HDG_Get().active || HDG_Get().stopping) {   // Spielbetrieb: nicht dazwischenfunken
       RS485_Unlock();
       return HD_SEND_GAME;
     }
@@ -70,6 +71,16 @@ void RS485Task(void *parameter) {
       lastRxMs = now;
     }
     HD_Tick(now);
+
+    // Spielbetrieb: Uhr weiterzaehlen und das naechste faellige Telegramm senden
+    HDG_Tick(now);
+    uint8_t frame[HD_FRAME_MAX];
+    size_t len = HDG_NextFrame(now, frame, sizeof(frame));
+    if (len > 0) {
+      hdSerial.write(frame, len);
+      hdSerial.flush();
+      HD_LogSent(frame, len, millis());
+    }
     RS485_Unlock();
     vTaskDelay(pdMS_TO_TICKS(5));
   }

@@ -1,6 +1,6 @@
 # HockeyDisplay
 
-Firmware für ein Waveshare **ESP32-S3-POE-ETH-8DI-8RO**, das an der RS485-Leitung der Spielstandanzeige in der HTHC-Hockeyhalle hängt. Der ESP32 liest die Telegramme zwischen Bediengerät und Anzeige mit, zeigt sie im Browser und kann die Uhr der Anzeige stellen.
+Firmware für ein Waveshare **ESP32-S3-POE-ETH-8DI-8RO**, das an der RS485-Leitung der Spielstandanzeige in der HTHC-Hockeyhalle hängt. Der ESP32 liest die Telegramme zwischen Bediengerät und Anzeige mit, zeigt sie im Browser, kann die Uhr der Anzeige stellen und die Anzeige im Spielbetrieb anstelle des Bediengeräts steuern.
 
 Diese Datei hält den gesamten Wissensstand fest: Aufbau, Bedienung, das per Reverse Engineering ermittelte Protokoll und die offenen Fragen. **Sie wird mit jeder Änderung am Projekt mitgepflegt** (siehe [Änderungsverlauf](#änderungsverlauf)).
 
@@ -11,6 +11,7 @@ Diese Datei hält den gesamten Wissensstand fest: Aufbau, Bedienung, das per Rev
 - [Einrichten und Kompilieren](#einrichten-und-kompilieren)
 - [Netzwerk und Firmware-Update](#netzwerk-und-firmware-update)
 - [Webseiten und API](#webseiten-und-api)
+- [Spielbetrieb](#spielbetrieb)
 - [RS485-Protokoll](#rs485-protokoll)
 - [Aufbau des Codes](#aufbau-des-codes)
 - [Offene Punkte](#offene-punkte)
@@ -25,7 +26,8 @@ Diese Datei hält den gesamten Wissensstand fest: Aufbau, Bedienung, das per Rev
 | Anzeige im Browser nachbauen | fertig, Anordnung noch nicht mit der echten Anzeige abgeglichen |
 | Uhr der Anzeige über die Webseite stellen | fertig, an der echten Anzeige noch nicht erprobt |
 | Firmware-Update über das Netzwerk (OTA) | fertig |
-| Spielstand, Zeit und Viertel vom ESP32 aus setzen | offen |
+| Spielbetrieb über die Webseite: Tore, Spielzeit, Viertel, Pausen | fertig, an der echten Anzeige noch nicht erprobt |
+| Horn im Spielbetrieb | offen |
 
 ## Hardware
 
@@ -79,7 +81,7 @@ git push                 # eigenen Stand hochladen
 
 | Adresse | Inhalt |
 | --- | --- |
-| `/` | Nachbau der Anzeige: Tore, Spielzeit, Viertel, Horn, Feld 0x26. Außerhalb des Spielmodus zeigt die Seite die Uhrzeit des Browsers. |
+| `/` | Nachbau der Anzeige (Tore, Spielzeit, Viertel, Horn, Feld 0x26) und darunter die Bedienung des [Spielbetriebs](#spielbetrieb). Außerhalb des Spielmodus zeigt die Seite die Uhrzeit des Browsers. |
 | `/monitor` | Jedes Telegramm mit Zeitstempel, Abstand zum vorigen, Hex, ASCII und Klartext. Filter „nur Änderungen“ und „nur unbekannte“, Speichern als Textdatei. Vom ESP32 gesendete Telegramme sind blau. |
 | `/uhr` | Uhr der Anzeige stellen: zum nächsten Minutenwechsel mit der Browserzeit oder sofort mit einer eingetragenen Zeit. |
 | `/relay` | Relais-Seite der Waveshare-Demo |
@@ -89,17 +91,76 @@ git push                 # eigenen Stand hochladen
 | `GET /api/state` | Zustand als JSON (Spielmodus, Zeit, Tore, Viertel, Horn, Zähler, Baudrate) |
 | `GET /api/log?since=<Nr>` | Telegramme ab der laufenden Nummer als JSON |
 | `GET /api/clock?d=TTMMJJHHMM` | Uhr der Anzeige stellen. **Sendet auf dem RS485-Bus.** |
+| `GET /api/game?cmd=...` | Spielbetrieb, siehe unten. **Sendet auf dem RS485-Bus.** |
 
-Die Webseiten haben keinen Zugriffsschutz. Jeder im WLAN kann sie öffnen und die Uhr stellen.
+Kommandos von `/api/game`:
+
+| `cmd` | Parameter | Wirkung |
+| --- | --- | --- |
+| `start` | `p`, `min`, `sb`, `hb` | Spielbetrieb starten, neues Spiel mit dieser Spielform |
+| `stop` | | Spielbetrieb beenden, Anzeige zeigt wieder die Uhrzeit |
+| `play`, `pause` | | Uhr starten und anhalten |
+| `reset` | `p`, `min`, `sb`, `hb` | Neues Spiel: 0:0, erstes Viertel, volle Zeit, Uhr steht |
+| `goal` | `team=h` oder `g`, `d=1` oder `-1` | Tor zählen oder zurücknehmen |
+| `time` | `d` in Sekunden, −600 bis 600 | Spielzeit korrigieren |
+
+`p` ist die Zahl der Viertel (1, 2 oder 4), `min` die Minuten je Viertel, `sb` die Viertelpause und `hb` die Halbzeitpause in Minuten. Die Antwort ist der Zustand wie bei `/api/state`.
+
+Die Webseiten haben keinen Zugriffsschutz. Jeder im WLAN kann sie öffnen, die Uhr stellen und den Spielbetrieb bedienen.
 
 ### Wann der ESP32 sendet
 
-Der ESP32 sendet ausschließlich das Telegramm zum Stellen der Uhr, und nur wenn beide Bedingungen erfüllt sind:
+Ohne Bedienung hört der ESP32 nur mit. Er sendet in zwei Fällen:
 
-1. In den letzten 3 Sekunden kam kein Spieltelegramm vom Bediengerät (`HD_TIMEOUT_MS`).
-2. Der Bus war mindestens 100 ms ruhig (`HD_BUS_IDLE_MS`). Darauf wartet der ESP32 bis zu 0,5 s.
+1. **Uhr stellen:** ein einzelnes Telegramm. Nur wenn in den letzten 3 Sekunden kein Spieltelegramm vom Bediengerät kam (`HD_TIMEOUT_MS`), der Spielbetrieb über die Webseite nicht läuft und der Bus mindestens 100 ms ruhig war (`HD_BUS_IDLE_MS`).
+2. **Spielbetrieb:** laufend, solange er über die Webseite gestartet ist. Der Start wird abgelehnt, solange das Bediengerät Spieltelegramme sendet.
 
-Sonst lehnt die API mit einer Fehlermeldung ab.
+**Bediengerät und ESP32 dürfen nicht gleichzeitig im Spielbetrieb senden.** Der ESP32 erkennt ein Bediengerät nur beim Start. Wird es später eingeschaltet, stören sich beide auf dem Bus.
+
+## Spielbetrieb
+
+Der ESP32 übernimmt die Rolle des Bediengeräts. Spieluhr und Spielstand laufen auf dem ESP32, nicht im Browser: Die Anzeige läuft weiter, wenn die Seite geschlossen wird, und mehrere Geräte können gleichzeitig bedienen.
+
+### Bedienung auf der Seite `/`
+
+| Element | Wirkung |
+| --- | --- |
+| **Spielbetrieb starten** | Sendet die Startsequenz und beginnt ein neues Spiel mit der gewählten Spielform. Die Uhr steht. |
+| **+** und **−** je Mannschaft | Tor zählen, Tor zurücknehmen (0 bis 99). GAST steht links, HEIM rechts. |
+| **Play**, **Pause** | Uhr starten und anhalten |
+| **Spielzeit korrigieren** | ± 1 Minute, ± 10 Sekunden, ± 1 Sekunde, auch bei laufender Uhr |
+| **Nächstes Spiel** | Spielform und Minuten für das nächste Spiel |
+| **Neues Spiel** | 0:0, erstes Viertel, volle Zeit, Uhr steht. Löst erst beim zweiten Tippen aus. |
+| **Spielbetrieb beenden** | Sendet die Endsequenz, die Anzeige zeigt wieder die Uhrzeit. Löst erst beim zweiten Tippen aus. |
+
+Die Seiten von GAST und HEIM lassen sich in `HD_Web.cpp` mit der Konstante `LEFT` tauschen.
+
+### Spielformen
+
+| Auswahl | Viertel | Minuten | Pausen |
+| --- | --- | --- | --- |
+| U8 | 1 | 10 voreingestellt, 8 bis 15 üblich | keine |
+| U12 | 2 | 10 | 2 min |
+| U12 | 2 | 12 | 2 min |
+| U14 bis U18 | 2 | 15 | 5 min |
+| Bundesliga | 4 | 15 | 1 min, 10 min, 1 min |
+| Turnier / Testspiel | 1 | 15 voreingestellt | keine |
+
+Die Minuten je Viertel lassen sich bei jeder Spielform im Feld daneben ändern (1 bis 99). Die Spielformen stehen in `HD_Web.cpp` in der Liste `FORMS`.
+
+### Ablauf
+
+- Die Spielzeit läuft rückwärts bis 0:00 (`HD_COUNT_DOWN` in `HD_Game.h`).
+- Läuft ein Viertel ab, startet die Pause von selbst und läuft im Zeitfeld rückwärts. Die Viertel-Anzeige bleibt dabei stehen.
+- Läuft die Pause ab, steht das nächste Viertel mit voller Zeit bereit und wartet auf **Play**.
+- Nach dem letzten Viertel bleibt die Uhr auf 0:00 stehen. Mit einer Zeitkorrektur nach oben lässt sich weiterspielen.
+- Ein Horn wird nicht ausgelöst.
+
+### Gesendete Telegramme
+
+- **Start:** dieselbe Folge wie beim Bediengerät, einschließlich der vier langen Telegramme. Deren Bedeutung ist unbekannt, sie werden unverändert wiederholt.
+- **Laufend:** alle 100 ms ein Telegramm in der Reihenfolge des Mitschnitts: HEIM, GAST, Zeit, HEIM oder GAST im Wechsel, vier Blöcke von Feld 0x26 mit `---`. Änderungen von Zeit, Toren und Viertel gehen sofort raus. Der Abstand von 100 ms ist angenommen, das Bediengerät wurde ohne Zeitstempel mitgeschnitten (`HD_TX_SLOT_MS`).
+- **Ende:** dieselbe Folge wie beim Bediengerät.
 
 ## RS485-Protokoll
 
@@ -179,24 +240,28 @@ Die Länge zählt alle Bytes nach dem Längenfeld, einschließlich `03` und BCC.
 | --- | --- |
 | `HockeyDisplay.ino` | Start, ruft die Module der Waveshare-Demo auf |
 | `HD_Protocol.h/.cpp` | Dekoder, Zustand der Anzeige, Telegramm-Log, Aufbau von Sendetelegrammen. Ohne Arduino-Abhängigkeiten. |
+| `HD_Game.h/.cpp` | Spielbetrieb: Spieluhr, Viertel und Pausen, Spielstand, Reihenfolge der gesendeten Telegramme. Ohne Arduino-Abhängigkeiten. |
 | `HD_Web.h/.cpp` | Webseiten und API |
-| `WS_RS485.h/.cpp` | UART, Mithör-Task, Senden des Uhr-Telegramms |
+| `WS_RS485.h/.cpp` | UART, Task für Mithören und Senden |
 | `WS_WIFI.cpp` | WLAN, feste IP, Webserver, OTA, Relais-Seite der Demo |
 | `WS_Information.h` | Netzwerk-Einstellungen, MQTT-Daten der Demo |
 | `secrets.example.h` | Vorlage für `secrets.h` |
-| `tools/` | Mitschnitte und Host-Test, wird von der Arduino IDE nicht kompiliert |
+| `tools/` | Mitschnitte und Host-Tests, wird von der Arduino IDE nicht kompiliert |
 | übrige `WS_*`-Dateien | unveränderte Waveshare-Demo (Relais, Eingänge, RTC, Ethernet, MQTT, CAN, SD) |
 
 Das Bluetooth-Modul der Demo wurde entfernt, weil seine Schnittstelle im Boardpaket 4.0.0 nicht mehr existiert.
 
-### Dekoder auf dem PC testen
+### Auf dem PC testen
 
 ```bash
 g++ -std=c++17 -I. tools/test_protocol.cpp HD_Protocol.cpp -o /tmp/hdtest
 /tmp/hdtest tools/mitschnitt.txt
+
+g++ -std=c++17 -I. tools/test_game.cpp HD_Game.cpp HD_Protocol.cpp -o /tmp/hdgame
+/tmp/hdgame
 ```
 
-Der Test prüft alle Mitschnitte auf gültige Prüfsummen und vergleicht das erzeugte Uhr-Telegramm Byte für Byte mit dem mitgeschnittenen.
+Der erste Test prüft alle Mitschnitte auf gültige Prüfsummen und vergleicht das erzeugte Uhr-Telegramm Byte für Byte mit dem mitgeschnittenen. Der zweite spielt die Spielformen im Zeitraffer durch und schickt jedes gesendete Telegramm durch den Dekoder.
 
 ## Offene Punkte
 
@@ -205,7 +270,13 @@ Der Test prüft alle Mitschnitte auf gültige Prüfsummen und vergleicht das erz
 - **Lange Telegramme** (`SLK2`, `RN`, `R0`, `T0`) deuten.
 - **Feld 0x26** bestätigen (Strafzeiten?) und die Bedeutung der freien Positionen 0, 4, 8 und 12 klären.
 - **Anordnung** der Browser-Anzeige mit einem Foto der echten Anzeige abgleichen.
-- **Senden von Spielstand, Zeit und Viertel** vom ESP32 aus, als Ersatz für das Bediengerät.
+- **Spielbetrieb an der echten Anzeige erproben:** ob sie die Startsequenz des ESP32 annimmt, im Spielmodus bleibt und nach dem Beenden zur Uhrzeit zurückkehrt.
+- **Abstand der Wiederholung** (100 ms) mit dem Bediengerät vergleichen: Abstände im Monitor ablesen.
+- **Laufrichtung der Uhr:** Der Mitschnitt des Bediengeräts zählt von 0:00 aufwärts, der Spielbetrieb zählt rückwärts. Klären, was gewünscht ist.
+- **Horn** im Spielbetrieb: von Hand und am Ende eines Viertels. Die Telegramme sind bekannt.
+- **Seiten von HEIM und GAST** mit der echten Anzeige abgleichen.
+- **Viertel-Anzeige während der Pause:** bleibt derzeit auf dem abgelaufenen Viertel stehen.
+- **Neustart des ESP32:** Spielstand und Uhr gehen verloren, der Spielbetrieb ist danach aus.
 - **WLAN-Passwort:** Es stand in früheren Versionen von `WS_Information.h` und ist in der Git-Historie weiterhin lesbar. Passwort ändern oder das Repository auf privat stellen.
 - Die Waveshare-Demo verbindet sich weiterhin per MQTT mit `mqtt.waveshare.cloud`. Prüfen, ob das gewünscht ist.
 
@@ -218,3 +289,4 @@ Der Test prüft alle Mitschnitte auf gültige Prüfsummen und vergleicht das erz
 | 21.11.2026 | Dekoder für das Protokoll, RS485-Monitor, Nachbau der Anzeige, feste IP, OTA, `secrets.h` |
 | 28.11.2026 | Telegramm zum Stellen von Datum und Uhrzeit ermittelt und dokumentiert, Seite `/uhr` und `/api/clock`, README angelegt |
 | 28.11.2026 | Baudrate fest auf 19200 gesetzt, Umstellung im Monitor und `/api/baud` entfernt |
+| 28.11.2026 | Spielbetrieb: Bedienung auf der Anzeigeseite (Tore, Play/Pause, Zeitkorrektur, Spielformen, Neues Spiel), `HD_Game`, `/api/game`. GAST steht auf der Seite jetzt links, HEIM rechts. |

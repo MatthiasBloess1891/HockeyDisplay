@@ -203,7 +203,9 @@ void HD_LogSent(const uint8_t *data, size_t len, uint32_t nowMs) {
   f.seq = logHead;
   f.ms = nowMs;
   f.len = (uint8_t)len;
-  f.flags = HD_F_TX | HD_F_CHK_OK | HD_F_KNOWN;
+  f.flags = HD_F_TX | HD_F_CHK_OK;
+  if (len > 2 && data[1] == 0x00) f.flags |= HD_F_LONG;   // langes Telegramm
+  else f.flags |= HD_F_KNOWN;
   memcpy(f.data, data, len);
   logHead++;
 }

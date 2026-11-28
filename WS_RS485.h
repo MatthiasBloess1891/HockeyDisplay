@@ -3,12 +3,16 @@
 #include <HardwareSerial.h>       // Reference the ESP32 built-in serial port library
 #include "WS_GPIO.h"
 #include "HD_Protocol.h"
+#include "HD_Game.h"
 
 /*
  * RS485-Schnittstelle der Spielstandanzeige.
  *
- * Der ESP32 hoert auf dem Bus mit. Gesendet wird ausschliesslich das Telegramm zum Stellen
- * der Uhr, und nur wenn das Bediengeraet nicht im Spielmodus sendet und der Bus ruhig ist.
+ * Der ESP32 hoert auf dem Bus mit. Er sendet in zwei Faellen:
+ *   - das Telegramm zum Stellen der Uhr (RS485_SendClock), nur ausserhalb des Spielbetriebs
+ *     und bei ruhigem Bus
+ *   - im Spielbetrieb (HD_Game) laufend die Telegramme fuer Spielstand und Spielzeit. Das
+ *     Bediengeraet darf dann nicht gleichzeitig senden.
  */
 
 #define HD_BAUD           19200   // feste Baudrate der Anzeige, 8N1
@@ -17,7 +21,7 @@
 // Ergebnis von RS485_SendClock
 #define HD_SEND_OK        0
 #define HD_SEND_INVALID   1       // Datum oder Uhrzeit ungueltig
-#define HD_SEND_GAME      2       // Bediengeraet sendet Spieltelegramme, es wird nicht gesendet
+#define HD_SEND_GAME      2       // Spielbetrieb laeuft (Bediengeraet oder ESP32), es wird nicht gesendet
 #define HD_SEND_BUSY      3       // Bus wurde nicht ruhig
 
 void     RS485_Init();                    // Schnittstelle oeffnen und Mithoer-Task starten

@@ -43,6 +43,44 @@ static const char PAGE_BOARD[] = R"HTML(<!DOCTYPE html>
   .dot { display:inline-block; width:10px; height:10px; border-radius:50%; background:#5b6470; margin-right:6px; }
   .dot.ok { background:#35e06a; } .dot.warn { background:#ffb000; } .dot.bad { background:#ff2a1a; }
   .hint { margin-top:10px; font-size:13px; color:var(--dim); }
+  button, select, input { font-family:inherit; font-size:16px; color:var(--label); background:#1a1f26; border:1px solid var(--frame); border-radius:8px; }
+  button { cursor:pointer; touch-action:manipulation; -webkit-tap-highlight-color:transparent; }
+  button:active:not(:disabled) { filter:brightness(1.4); }
+  button:disabled { opacity:.35; cursor:default; }
+  .ctl { margin-top:18px; border:1px solid var(--frame); border-radius:12px; padding:16px; }
+  .main { display:grid; grid-template-columns:1fr auto 1fr; gap:16px; align-items:stretch; }
+  .team { display:flex; flex-direction:column; align-items:center; gap:10px; }
+  .tname { font-size:15px; letter-spacing:.2em; font-weight:600; }
+  .plus { width:100%; max-width:230px; height:92px; font-size:46px; font-weight:600; background:#143a22; border-color:#238636; color:#fff; }
+  .minus { width:84px; height:40px; font-size:20px; color:var(--dim); }
+  .mid { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; min-width:230px; }
+  .pp { display:flex; gap:10px; }
+  .pp button { width:110px; height:92px; font-size:17px; font-weight:600; line-height:1.5; }
+  .pp button span { display:block; font-size:28px; line-height:1; }
+  #play.on { background:#1f6feb; border-color:#1f6feb; color:#fff; }
+  #pause.on { background:#9e6a03; border-color:#9e6a03; color:#fff; }
+  .pp button.on:disabled { opacity:1; }
+  .seg { font-size:14px; color:var(--dim); text-align:center; min-height:20px; }
+  .seg b { color:var(--label); }
+  .adj { display:flex; flex-wrap:wrap; gap:8px; align-items:center; justify-content:center; margin-top:16px; padding-top:16px; border-top:1px solid var(--frame); }
+  .adj span { color:var(--dim); font-size:14px; margin:0 6px; }
+  .adj button { height:42px; min-width:78px; padding:0 10px; }
+  .setup { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:16px; padding-top:16px; border-top:1px solid var(--frame); font-size:14px; color:var(--dim); }
+  .setup select, .setup input { height:38px; padding:0 8px; font-size:14px; }
+  .setup input { width:64px; }
+  .setup button { height:38px; padding:0 12px; font-size:14px; }
+  .setup .grow { flex:1; }
+  #mode2.go { background:#238636; border-color:#238636; color:#fff; font-weight:600; }
+  button.ask { background:#da3633 !important; border-color:#da3633 !important; color:#fff !important; }
+  @media (max-width:640px) {
+    .main { grid-template-columns:1fr 1fr; }
+    .mid { grid-column:1 / 3; grid-row:1; min-width:0; }
+    .pp button { width:130px; height:70px; }
+    .plus { height:76px; }
+    .adj { display:grid; grid-template-columns:repeat(3, 1fr); }
+    .adj span { grid-column:1 / 4; order:-1; text-align:center; }
+    .adj button { min-width:0; }
+  }
 </style>
 </head>
 <body>
@@ -50,9 +88,9 @@ static const char PAGE_BOARD[] = R"HTML(<!DOCTYPE html>
 <div class="wrap">
   <div class="board">
     <div class="row">
-      <div class="cell red"><div class="cap">HEIM</div><div class="digits" id="home"></div></div>
+      <div class="cell red"><div class="cap" id="capL"></div><div class="digits" id="scoreL"></div></div>
       <div class="cell amber"><div class="cap" id="timecap">SPIELZEIT</div><div class="digits" id="time"></div></div>
-      <div class="cell red"><div class="cap">GAST</div><div class="digits" id="guest"></div></div>
+      <div class="cell red"><div class="cap" id="capR"></div><div class="digits" id="scoreR"></div></div>
     </div>
     <div class="sub">
       <div class="pens small amber"><div class="digits" id="pen0"></div><div class="digits" id="pen1"></div></div>
@@ -68,6 +106,41 @@ static const char PAGE_BOARD[] = R"HTML(<!DOCTYPE html>
     <span>Baudrate: <b id="baud">–</b></span>
   </div>
   <div class="hint" id="hint"></div>
+
+  <div class="ctl">
+    <div class="main">
+      <div class="team">
+        <div class="tname" id="nameL"></div>
+        <button class="plus g" id="plusL" title="Tor">+</button>
+        <button class="minus g" id="minusL" title="Tor zurück">−</button>
+      </div>
+      <div class="mid">
+        <div class="pp">
+          <button class="g" id="play"><span>▶</span>Play</button>
+          <button class="g" id="pause"><span>❚❚</span>Pause</button>
+        </div>
+        <div class="seg" id="seg"></div>
+      </div>
+      <div class="team">
+        <div class="tname" id="nameR"></div>
+        <button class="plus g" id="plusR" title="Tor">+</button>
+        <button class="minus g" id="minusR" title="Tor zurück">−</button>
+      </div>
+    </div>
+    <div class="adj">
+      <button class="g" data-t="-60">− 1 min</button><button class="g" data-t="-10">− 10 s</button><button class="g" data-t="-1">− 1 s</button>
+      <span>Spielzeit korrigieren</span>
+      <button class="g" data-t="1">+ 1 s</button><button class="g" data-t="10">+ 10 s</button><button class="g" data-t="60">+ 1 min</button>
+    </div>
+    <div class="setup">
+      <span>Nächstes Spiel:</span>
+      <select id="form" title="Spielform"></select>
+      <label><input type="number" id="min" min="1" max="99" inputmode="numeric"> min</label>
+      <button class="g" id="reset">Neues Spiel</button>
+      <span class="grow"></span>
+      <button id="mode2"></button>
+    </div>
+  </div>
 </div>
 <script>
 const SEG = {'0':'abcdef','1':'bc','2':'abged','3':'abgcd','4':'fgbc','5':'afgcd','6':'afgedc','7':'abc','8':'abcdefg','9':'abcdfg','-':'g',' ':''};
@@ -78,6 +151,20 @@ function digit(ch) {
   for (const k in SHAPE) { const r = SHAPE[k]; s += '<rect class="seg' + (on.includes(k) ? ' on' : '') + '" x="' + r[0] + '" y="' + r[1] + '" width="' + r[2] + '" height="' + r[3] + '" rx="4"/>'; }
   return s + '</svg>';
 }
+// Seite der Mannschaften auf dieser Seite. Zum Tauschen 'home' eintragen.
+const LEFT = 'guest';
+const NAMES = {home: 'HEIM', guest: 'GAST'};
+const RIGHT = LEFT === 'home' ? 'guest' : 'home';
+// Spielformen: p = Abschnitte, min = Minuten je Abschnitt, sb = Viertelpause, hb = Halbzeitpause (Minuten)
+const FORMS = [
+  {n: 'U8 · 1 × 8 bis 15 min', p: 1, min: 10, sb: 0, hb: 0},
+  {n: 'U12 · 2 × 10 min, 2 min Pause', p: 2, min: 10, sb: 0, hb: 2},
+  {n: 'U12 · 2 × 12 min, 2 min Pause', p: 2, min: 12, sb: 0, hb: 2},
+  {n: 'U14 bis U18 · 2 × 15 min, 5 min Pause', p: 2, min: 15, sb: 0, hb: 5},
+  {n: 'Bundesliga · 4 × 15 min, Pausen 1 / 10 / 1 min', p: 4, min: 15, sb: 1, hb: 10},
+  {n: 'Turnier / Testspiel · 1 Viertel', p: 1, min: 15, sb: 0, hb: 0}
+];
+const $ = id => document.getElementById(id);
 const last = {};
 function show(id, text, colonAt, colonOn) {
   const key = text + '|' + colonAt + '|' + colonOn;
@@ -98,23 +185,26 @@ function render(st) {
   document.getElementById('timecap').textContent = game ? 'SPIELZEIT' : 'UHRZEIT';
   if (game) {
     const sc = pad(st.score, 6), pen = pad(st.pen, 16);
-    show('home', sc.slice(0, 3).trim().padStart(2, ' '), -1, false);
-    show('guest', sc.slice(3, 6).trim().padStart(2, ' '), -1, false);
+    const sco = {home: sc.slice(0, 3), guest: sc.slice(3, 6)};
+    show('scoreL', sco[LEFT].trim().padStart(2, ' '), -1, false);
+    show('scoreR', sco[RIGHT].trim().padStart(2, ' '), -1, false);
     show('time', pad(st.time, 4), 2, true);
     show('period', pad(st.period, 1), -1, false);
     for (let i = 0; i < 4; i++) show('pen' + i, pen.slice(1 + 4 * i, 4 + 4 * i), -1, false);
   } else {
     const d = new Date();
-    show('home', '  ', -1, false);
-    show('guest', '  ', -1, false);
+    show('scoreL', '  ', -1, false);
+    show('scoreR', '  ', -1, false);
     show('time', two(d.getHours()) + two(d.getMinutes()), 2, d.getSeconds() % 2 === 0);
     show('period', ' ', -1, false);
     for (let i = 0; i < 4; i++) show('pen' + i, '   ', -1, false);
   }
   document.getElementById('horn').className = 'horn' + (game && st.horn ? ' on' : '');
   const dot = document.getElementById('dot'), mode = document.getElementById('mode'), hint = document.getElementById('hint');
+  controls(st);
   if (!st) { dot.className = 'dot bad'; mode.textContent = 'Keine Verbindung zum ESP32'; hint.textContent = ''; return; }
-  if (game) { dot.className = 'dot ok'; mode.textContent = 'Spielmodus'; hint.textContent = ''; }
+  if (st.ctrl) { dot.className = 'dot ok'; mode.textContent = 'Spielbetrieb über diese Seite'; hint.textContent = ''; }
+  else if (game) { dot.className = 'dot ok'; mode.textContent = 'Spielmodus (Bediengerät)'; hint.textContent = 'Das Bediengerät steuert die Anzeige. Die Bedienung auf dieser Seite ist gesperrt.'; }
   else if (st.online) { dot.className = 'dot warn'; mode.textContent = 'Uhrzeit (Spielmodus beendet)'; hint.textContent = ''; }
   else {
     dot.className = 'dot'; mode.textContent = 'Uhrzeit (Bediengerät sendet nicht)';
@@ -124,6 +214,91 @@ function render(st) {
   document.getElementById('frames').textContent = st.frames;
   document.getElementById('err').textContent = st.chkErr;
   document.getElementById('baud').textContent = st.baud + ' 8N1';
+}
+// Bedienelemente an den Zustand anpassen
+function controls(st) {
+  const ctrl = !!(st && st.ctrl);
+  document.querySelectorAll('button.g').forEach(b => { b.disabled = !ctrl; });
+  const m = $('mode2');
+  m.disabled = !st || (!ctrl && (st.online || st.stopping));
+  if (!m.classList.contains('ask')) m.textContent = ctrl ? 'Spielbetrieb beenden' : 'Spielbetrieb starten';
+  m.classList.toggle('go', !ctrl);
+  $('play').classList.toggle('on', ctrl && st.run && !st.brk);
+  $('pause').classList.toggle('on', ctrl && !st.run && !st.fin);
+  $('play').disabled = !ctrl || st.fin || st.run;
+  $('pause').disabled = !ctrl || !st.run;
+  let seg = '';
+  if (ctrl) {
+    if (st.fin) seg = '<b>Spielende</b>';
+    else if (st.brk) seg = '<b>Pause</b> nach dem ' + st.per + '. Viertel · läuft';
+    else seg = '<b>' + st.per + '. Viertel</b> von ' + st.periods + ' · ' + (st.run ? 'Uhr läuft' : 'Uhr steht');
+  }
+  $('seg').innerHTML = seg;
+}
+async function cmd(q) {
+  try {
+    const r = await fetch('/api/game?' + q, {cache: 'no-store'});
+    const j = await r.json();
+    if (j.error) { $('hint').textContent = j.error; return; }
+    render(j);
+  } catch (e) {}
+}
+// Schaltflächen, die erst beim zweiten Tippen auslösen
+function twoStep(btn, question, action) {
+  let t = null;
+  btn.onclick = () => {
+    if (!btn.classList.contains('ask')) {
+      btn.dataset.text = btn.textContent;
+      btn.textContent = question;
+      btn.classList.add('ask');
+      t = setTimeout(() => { btn.classList.remove('ask'); btn.textContent = btn.dataset.text; }, 3000);
+    } else {
+      clearTimeout(t);
+      btn.classList.remove('ask');
+      btn.textContent = btn.dataset.text;
+      action();
+    }
+  };
+}
+function setup() {
+  $('capL').textContent = $('nameL').textContent = NAMES[LEFT];
+  $('capR').textContent = $('nameR').textContent = NAMES[RIGHT];
+  const team = {L: LEFT === 'home' ? 'h' : 'g', R: RIGHT === 'home' ? 'h' : 'g'};
+  for (const side of ['L', 'R']) {
+    $('plus' + side).onclick = () => cmd('cmd=goal&team=' + team[side] + '&d=1');
+    $('minus' + side).onclick = () => cmd('cmd=goal&team=' + team[side] + '&d=-1');
+  }
+  $('play').onclick = () => cmd('cmd=play');
+  $('pause').onclick = () => cmd('cmd=pause');
+  document.querySelectorAll('button[data-t]').forEach(b => { b.onclick = () => cmd('cmd=time&d=' + b.dataset.t); });
+  const sel = $('form');
+  FORMS.forEach((f, i) => { const o = document.createElement('option'); o.value = i; o.textContent = f.n; sel.appendChild(o); });
+  let saved = 3;
+  try { const v = parseInt(localStorage.getItem('hdForm'), 10); if (v >= 0 && v < FORMS.length) saved = v; } catch (e) {}
+  sel.value = saved;
+  $('min').value = FORMS[saved].min;
+  sel.onchange = () => { $('min').value = FORMS[sel.value].min; try { localStorage.setItem('hdForm', sel.value); } catch (e) {} };
+  const config = () => {
+    const f = FORMS[sel.value];
+    let min = parseInt($('min').value, 10);
+    if (!(min >= 1 && min <= 99)) { min = f.min; $('min').value = min; }
+    return '&p=' + f.p + '&min=' + min + '&sb=' + f.sb + '&hb=' + f.hb;
+  };
+  twoStep($('reset'), 'Wirklich neu starten?', () => cmd('cmd=reset' + config()));
+  const m = $('mode2');
+  let t = null;
+  m.onclick = () => {
+    if (m.classList.contains('go')) { cmd('cmd=start' + config()); return; }
+    if (!m.classList.contains('ask')) {
+      m.classList.add('ask');
+      m.textContent = 'Wirklich beenden?';
+      t = setTimeout(() => { m.classList.remove('ask'); }, 3000);
+    } else {
+      clearTimeout(t);
+      m.classList.remove('ask');
+      cmd('cmd=stop');
+    }
+  };
 }
 async function poll() {
   try {
@@ -135,6 +310,7 @@ async function poll() {
   }
   setTimeout(poll, 250);
 }
+setup();
 render({game: false, online: false, seen: false, age: 0, frames: 0, chkErr: 0, baud: '–', rx: 0});
 poll();
 </script>
@@ -410,6 +586,16 @@ static void handleState() {
   HdState st = HD_GetState();
   bool online = HD_Online(now);
   bool game = HD_GameMode(now);
+  HdGame gm = HDG_Get();
+  if (gm.active) {                              // Spielbetrieb: Anzeige aus dem eigenen Spielstand, nicht vom Bus
+    HDG_TimeText(st.time);
+    HDG_ScoreText(st.score);
+    st.period[0] = (char)('0' + gm.period);
+    memcpy(st.status, "@@A", 4);
+    memcpy(st.pen, " --- --- --- ---", 17);
+    game = true;
+  }
+  uint16_t shown = HDG_ShownSeconds();
   RS485_Unlock();
 
   String json = "{";
@@ -428,8 +614,71 @@ static void handleState() {
   json += ",\"incomplete\":" + String(st.incomplete);
   json += ",\"rx\":" + String(RS485_RxBytes());
   json += ",\"baud\":" + String(RS485_GetBaud());
+  json += ",\"ctrl\":" + String(gm.active ? "true" : "false");
+  json += ",\"stopping\":" + String(gm.stopping ? "true" : "false");
+  json += ",\"run\":" + String(gm.running ? "true" : "false");
+  json += ",\"brk\":" + String(gm.inBreak ? "true" : "false");
+  json += ",\"fin\":" + String(gm.finished ? "true" : "false");
+  json += ",\"per\":" + String((int)gm.period);
+  json += ",\"periods\":" + String((int)gm.cfg.periods);
+  json += ",\"sec\":" + String((int)shown);
   json += "}";
   web->send(200, "application/json", json);
+}
+
+static void sendError(int code, const char *text) {
+  web->send(code, "application/json", String("{\"error\":\"") + text + "\"}");
+}
+
+// Spielform aus der Anfrage uebernehmen: p = Abschnitte, min = Minuten, sb/hb = Pausen in Minuten
+static bool applyConfig() {
+  if (!web->hasArg("p")) return true;           // keine Angabe: bisherige Spielform behalten
+  HdGameConfig cfg;
+  cfg.periods = (uint8_t)web->arg("p").toInt();
+  cfg.periodSec = (uint16_t)(web->arg("min").toInt() * 60);
+  cfg.shortBreakSec = (uint16_t)(web->arg("sb").toInt() * 60);
+  cfg.halfBreakSec = (uint16_t)(web->arg("hb").toInt() * 60);
+  return HDG_SetConfig(cfg);
+}
+
+// Spielbetrieb: /api/game?cmd=start|stop|play|pause|reset|goal|time
+static void handleGame() {
+  String c = web->arg("cmd");
+  const char *err = NULL;
+  RS485_Lock();
+  uint32_t now = millis();
+  bool active = HDG_Get().active;
+  if (c == "start") {
+    if (!active && HD_Online(now)) err = "Das Bediengerät sendet im Spielmodus. Bitte zuerst das Bediengerät ausschalten oder abziehen.";
+    else if (!active && HDG_Get().stopping) err = "Die Anzeige wird gerade zurückgeschaltet. Bitte kurz warten.";
+    else if (!applyConfig()) err = "Die Spielform ist ungültig.";
+    else if (!active) { HDG_Reset(now); HDG_Start(now); }
+  } else if (!active) {
+    err = "Der Spielbetrieb ist nicht gestartet.";
+  } else if (c == "stop") {
+    HDG_Stop(now);
+  } else if (c == "play") {
+    HDG_Play(now);
+  } else if (c == "pause") {
+    HDG_Pause(now);
+  } else if (c == "reset") {
+    if (!applyConfig()) err = "Die Spielform ist ungültig.";
+    else HDG_Reset(now);
+  } else if (c == "goal") {
+    int d = web->arg("d").toInt();
+    String team = web->arg("team");
+    if ((d != 1 && d != -1) || (team != "h" && team != "g")) err = "Parameter team oder d ist ungültig.";
+    else HDG_Goal(team == "h", d);
+  } else if (c == "time") {
+    int d = web->arg("d").toInt();
+    if (d == 0 || d < -600 || d > 600) err = "Parameter d ist ungültig.";
+    else HDG_AdjustTime(d, now);
+  } else {
+    err = "Unbekanntes Kommando.";
+  }
+  RS485_Unlock();
+  if (err) { sendError(409, err); return; }
+  handleState();
 }
 
 #define HD_LOG_CHUNK 40
@@ -499,7 +748,7 @@ static void handleClock() {
   }
   const char *err = "Der RS485-Bus wurde nicht ruhig, es wurde nichts gesendet.";
   if (res == HD_SEND_INVALID) err = "Datum oder Uhrzeit sind ungültig.";
-  if (res == HD_SEND_GAME) err = "Das Bediengerät sendet im Spielmodus. Die Uhr lässt sich erst nach Spielende stellen.";
+  if (res == HD_SEND_GAME) err = "Der Spielbetrieb läuft. Die Uhr lässt sich erst nach Spielende stellen.";
   web->send(res == HD_SEND_INVALID ? 400 : 409, "application/json", String("{\"ok\":false,\"error\":\"") + err + "\"}");
 }
 
@@ -511,4 +760,5 @@ void HD_Web_Register(WebServer &srv) {
   srv.on("/api/log", handleLog);
   srv.on("/uhr", handleClockPage);
   srv.on("/api/clock", handleClock);
+  srv.on("/api/game", handleGame);
 }
