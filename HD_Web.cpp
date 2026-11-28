@@ -48,20 +48,25 @@ static const char PAGE_BOARD[] = R"HTML(<!DOCTYPE html>
   button:active:not(:disabled) { filter:brightness(1.4); }
   button:disabled { opacity:.35; cursor:default; }
   .ctl { margin-top:18px; border:1px solid var(--frame); border-radius:12px; padding:16px; }
-  .main { display:grid; grid-template-columns:1fr auto 1fr; gap:16px; align-items:stretch; }
-  .team { display:flex; flex-direction:column; align-items:center; gap:10px; }
+  .main { display:grid; grid-template-columns:repeat(4, 1fr); gap:10px 14px; align-items:center; justify-items:center; }
   .tname { font-size:15px; letter-spacing:.2em; font-weight:600; }
-  .plus { width:100%; max-width:230px; height:92px; font-size:46px; font-weight:600; background:#143a22; border-color:#238636; color:#fff; }
+  .big { width:100%; height:92px; font-size:17px; font-weight:600; line-height:1.5; }
+  .big span { display:block; font-size:28px; line-height:1; }
+  .plus { font-size:46px; line-height:1; background:#143a22; border-color:#238636; color:#fff; }
   .minus { width:84px; height:40px; font-size:20px; color:var(--dim); }
-  .mid { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; min-width:230px; }
-  .pp { display:flex; gap:10px; }
-  .pp button { width:110px; height:92px; font-size:17px; font-weight:600; line-height:1.5; }
-  .pp button span { display:block; font-size:28px; line-height:1; }
+  #nameL { grid-column:1; grid-row:1; }   #nameR { grid-column:4; grid-row:1; }
+  #plusL { grid-column:1; grid-row:2; }   #play { grid-column:2; grid-row:2; }
+  #pause { grid-column:3; grid-row:2; }   #plusR { grid-column:4; grid-row:2; }
+  #minusL { grid-column:1; grid-row:3; }  #minusR { grid-column:4; grid-row:3; }
+  .mid { grid-column:2 / 4; grid-row:3; display:flex; align-items:center; justify-content:center; gap:14px; flex-wrap:wrap; }
   #play.on { background:#1f6feb; border-color:#1f6feb; color:#fff; }
   #pause.on { background:#9e6a03; border-color:#9e6a03; color:#fff; }
-  .pp button.on:disabled { opacity:1; }
-  .seg { font-size:14px; color:var(--dim); text-align:center; min-height:20px; }
+  .big.on:disabled { opacity:1; }
+  #hornBtn { height:40px; padding:0 16px; }
+  #hornBtn.on { background:#ff2a1a; border-color:#ff2a1a; color:#fff; opacity:1; }
+  .seg { font-size:14px; color:var(--dim); text-align:center; }
   .seg b { color:var(--label); }
+  .cap.brk { color:#ffb000; }
   .adj { display:flex; flex-wrap:wrap; gap:8px; align-items:center; justify-content:center; margin-top:16px; padding-top:16px; border-top:1px solid var(--frame); }
   .adj span { color:var(--dim); font-size:14px; margin:0 6px; }
   .adj button { height:42px; min-width:78px; padding:0 10px; }
@@ -74,9 +79,12 @@ static const char PAGE_BOARD[] = R"HTML(<!DOCTYPE html>
   button.ask { background:#da3633 !important; border-color:#da3633 !important; color:#fff !important; }
   @media (max-width:640px) {
     .main { grid-template-columns:1fr 1fr; }
-    .mid { grid-column:1 / 3; grid-row:1; min-width:0; }
-    .pp button { width:130px; height:70px; }
-    .plus { height:76px; }
+    #play { grid-column:1; grid-row:1; }    #pause { grid-column:2; grid-row:1; }
+    .mid { grid-column:1 / 3; grid-row:2; }
+    #nameL { grid-column:1; grid-row:3; }   #nameR { grid-column:2; grid-row:3; }
+    #plusL { grid-column:1; grid-row:4; }   #plusR { grid-column:2; grid-row:4; }
+    #minusL { grid-column:1; grid-row:5; }  #minusR { grid-column:2; grid-row:5; }
+    .big { height:76px; }
     .adj { display:grid; grid-template-columns:repeat(3, 1fr); }
     .adj span { grid-column:1 / 4; order:-1; text-align:center; }
     .adj button { min-width:0; }
@@ -109,23 +117,15 @@ static const char PAGE_BOARD[] = R"HTML(<!DOCTYPE html>
 
   <div class="ctl">
     <div class="main">
-      <div class="team">
-        <div class="tname" id="nameL"></div>
-        <button class="plus g" id="plusL" title="Tor">+</button>
-        <button class="minus g" id="minusL" title="Tor zurück">−</button>
-      </div>
-      <div class="mid">
-        <div class="pp">
-          <button class="g" id="play"><span>▶</span>Play</button>
-          <button class="g" id="pause"><span>❚❚</span>Pause</button>
-        </div>
-        <div class="seg" id="seg"></div>
-      </div>
-      <div class="team">
-        <div class="tname" id="nameR"></div>
-        <button class="plus g" id="plusR" title="Tor">+</button>
-        <button class="minus g" id="minusR" title="Tor zurück">−</button>
-      </div>
+      <div class="tname" id="nameL"></div>
+      <div class="tname" id="nameR"></div>
+      <button class="big plus g" id="plusL" title="Tor">+</button>
+      <button class="big g" id="play"><span>▶</span>Play</button>
+      <button class="big g" id="pause"><span>❚❚</span>Pause</button>
+      <button class="big plus g" id="plusR" title="Tor">+</button>
+      <button class="minus g" id="minusL" title="Tor zurück">−</button>
+      <div class="mid"><div class="seg" id="seg"></div><button class="g" id="hornBtn" title="Horn für 2 Sekunden">Horn</button></div>
+      <button class="minus g" id="minusR" title="Tor zurück">−</button>
     </div>
     <div class="adj">
       <button class="g" data-t="-60">− 1 min</button><button class="g" data-t="-10">− 10 s</button><button class="g" data-t="-1">− 1 s</button>
@@ -182,7 +182,9 @@ function two(n) { return (n < 10 ? '0' : '') + n; }
 let failures = 0;
 function render(st) {
   const game = st && st.game;
-  document.getElementById('timecap').textContent = game ? 'SPIELZEIT' : 'UHRZEIT';
+  const brk = !!(st && st.ctrl && st.brk);
+  document.getElementById('timecap').textContent = brk ? 'PAUSE' : (game ? 'SPIELZEIT' : 'UHRZEIT');
+  document.getElementById('timecap').classList.toggle('brk', brk);
   if (game) {
     const sc = pad(st.score, 6), pen = pad(st.pen, 16);
     const sco = {home: sc.slice(0, 3), guest: sc.slice(3, 6)};
@@ -224,13 +226,16 @@ function controls(st) {
   if (!m.classList.contains('ask')) m.textContent = ctrl ? 'Spielbetrieb beenden' : 'Spielbetrieb starten';
   m.classList.toggle('go', !ctrl);
   $('play').classList.toggle('on', ctrl && st.run && !st.brk);
-  $('pause').classList.toggle('on', ctrl && !st.run && !st.fin);
-  $('play').disabled = !ctrl || st.fin || st.run;
+  $('pause').classList.toggle('on', ctrl && !st.run && !st.fin && !st.wait);
+  $('play').disabled = !ctrl || st.fin || st.run || st.wait;
   $('pause').disabled = !ctrl || !st.run;
+  $('hornBtn').classList.toggle('on', ctrl && st.horn);
+  $('hornBtn').disabled = !ctrl || st.horn;
   let seg = '';
   if (ctrl) {
     if (st.fin) seg = '<b>Spielende</b>';
-    else if (st.brk) seg = '<b>Pause</b> nach dem ' + st.per + '. Viertel · läuft';
+    else if (st.wait) seg = '<b>' + st.per + '. Viertel beendet</b>';
+    else if (st.brk) seg = '<b>Pause</b> nach dem ' + st.per + '. Viertel · ' + (st.run ? 'läuft' : 'angehalten');
     else seg = '<b>' + st.per + '. Viertel</b> von ' + st.periods + ' · ' + (st.run ? 'Uhr läuft' : 'Uhr steht');
   }
   $('seg').innerHTML = seg;
@@ -270,6 +275,7 @@ function setup() {
   }
   $('play').onclick = () => cmd('cmd=play');
   $('pause').onclick = () => cmd('cmd=pause');
+  $('hornBtn').onclick = () => cmd('cmd=horn');
   document.querySelectorAll('button[data-t]').forEach(b => { b.onclick = () => cmd('cmd=time&d=' + b.dataset.t); });
   const sel = $('form');
   FORMS.forEach((f, i) => { const o = document.createElement('option'); o.value = i; o.textContent = f.n; sel.appendChild(o); });
@@ -591,7 +597,7 @@ static void handleState() {
     HDG_TimeText(st.time);
     HDG_ScoreText(st.score);
     st.period[0] = (char)('0' + gm.period);
-    memcpy(st.status, "@@A", 4);
+    memcpy(st.status, gm.horn ? "@@a" : "@@A", 4);
     memcpy(st.pen, " --- --- --- ---", 17);
     game = true;
   }
@@ -619,6 +625,7 @@ static void handleState() {
   json += ",\"run\":" + String(gm.running ? "true" : "false");
   json += ",\"brk\":" + String(gm.inBreak ? "true" : "false");
   json += ",\"fin\":" + String(gm.finished ? "true" : "false");
+  json += ",\"wait\":" + String(gm.hornWait ? "true" : "false");
   json += ",\"per\":" + String((int)gm.period);
   json += ",\"periods\":" + String((int)gm.cfg.periods);
   json += ",\"sec\":" + String((int)shown);
@@ -641,7 +648,7 @@ static bool applyConfig() {
   return HDG_SetConfig(cfg);
 }
 
-// Spielbetrieb: /api/game?cmd=start|stop|play|pause|reset|goal|time
+// Spielbetrieb: /api/game?cmd=start|stop|play|pause|reset|goal|time|horn
 static void handleGame() {
   String c = web->arg("cmd");
   const char *err = NULL;
@@ -664,6 +671,8 @@ static void handleGame() {
   } else if (c == "reset") {
     if (!applyConfig()) err = "Die Spielform ist ungültig.";
     else HDG_Reset(now);
+  } else if (c == "horn") {
+    HDG_Horn(HD_HORN_MANUAL_MS, now);
   } else if (c == "goal") {
     int d = web->arg("d").toInt();
     String team = web->arg("team");

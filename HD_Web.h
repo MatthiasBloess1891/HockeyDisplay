@@ -10,6 +10,6 @@
  *   /api/state   aktueller Zustand als JSON
  *   /api/log     mitgeschnittene Telegramme als JSON (?since=<Nummer>)
  *   /api/clock   Uhr stellen (?d=TTMMJJHHMM), sendet auf dem RS485-Bus
- *   /api/game    Spielbetrieb (?cmd=start|stop|play|pause|reset|goal|time), sendet auf dem RS485-Bus
+ *   /api/game    Spielbetrieb (?cmd=start|stop|play|pause|reset|goal|time|horn), sendet auf dem RS485-Bus
  */
 void HD_Web_Register(WebServer &srv);

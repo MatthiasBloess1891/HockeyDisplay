@@ -10,6 +10,9 @@
 #define D_HOME    0x02
 #define D_GUEST   0x04
 #define D_PERIOD  0x08
+#define D_STATUS  0x10
+
+enum { NEXT_NONE, NEXT_BREAK, NEXT_PERIOD };
 
 static HdGame   g;
 static HdGameConfig nextCfg;
@@ -19,6 +22,11 @@ static uint32_t lastSlotMs = 0;
 static uint16_t shownSec = 0xFFFF;
 static uint8_t  dirty = 0;
 static uint8_t  rot = 0;
+static uint32_t hornEndMs = 0;
+static uint8_t  hornOffRepeat = 0;
+static uint32_t hornOffAtMs = 0;
+static uint8_t  nextStep = NEXT_NONE;       // was nach dem Horn am Abschnittsende passiert
+static uint32_t nextAtMs = 0;
 
 static uint8_t  q[Q_MAX][Q_FRAME];
 static uint8_t  qLen[Q_MAX];
@@ -96,6 +104,10 @@ static size_t buildPeriod(uint8_t *out, size_t max) {
   return HD_BuildShort(0x25, 0x20, t, out, max);
 }
 
+static size_t buildStatus(uint8_t *out, size_t max) {
+  return HD_BuildShort(0x22, 0x20, g.horn ? "@@a" : "@@A", out, max);
+}
+
 static size_t buildBlock(uint8_t n, const char *text, uint8_t *out, size_t max) {
   return HD_BuildShort(0x26, (uint8_t)(0x21 + 4 * n), text, out, max);
 }
@@ -106,8 +118,24 @@ static void loadPeriod(uint8_t period) {
   g.inBreak = false;
   g.finished = false;
   g.running = false;
+  g.hornWait = false;
+  nextStep = NEXT_NONE;
   g.remainMs = (int32_t)g.cfg.periodSec * 1000;
   dirty |= D_TIME | D_PERIOD;
+}
+
+void HDG_Horn(uint32_t durationMs, uint32_t nowMs) {
+  if (!g.active || durationMs == 0) return;
+  uint32_t end = nowMs + durationMs;
+  if (!g.horn || (int32_t)(end - hornEndMs) > 0) hornEndMs = end;   // laufendes Horn hoechstens verlaengern
+  g.horn = true;
+  hornOffRepeat = 0;
+  dirty |= D_STATUS;
+}
+
+static void hornOff() {
+  g.horn = false;
+  hornOffRepeat = 0;
 }
 
 void HDG_Init() {
@@ -121,6 +149,8 @@ void HDG_Init() {
   dirty = 0;
   rot = 0;
   shownSec = 0xFFFF;
+  hornOffRepeat = 0;
+  nextStep = NEXT_NONE;
   loadPeriod(1);
   dirty = 0;
 }
@@ -151,6 +181,7 @@ void HDG_Start(uint32_t nowMs) {
   g.active = true;
   g.stopping = false;
   g.running = false;
+  hornOff();
   lastTickMs = nowMs;
   // Startsequenz wie vom Bediengeraet
   pushShort(0x20, '%', "0");                             // Spielmodus EIN
@@ -177,6 +208,9 @@ void HDG_Stop(uint32_t nowMs) {
   g.active = false;
   g.stopping = true;
   g.running = false;
+  g.hornWait = false;
+  nextStep = NEXT_NONE;
+  hornOff();                                             // die Endsequenz schaltet das Horn mit "@@@" aus
   dirty = 0;
   // Endsequenz wie vom Bediengeraet
   pushShort(0x20, '!', "0");                             // Spielmodus AUS
@@ -194,7 +228,7 @@ void HDG_Stop(uint32_t nowMs) {
 }
 
 void HDG_Play(uint32_t nowMs) {
-  if (!g.active || g.finished || g.running) return;
+  if (!g.active || g.finished || g.running || g.hornWait) return;
   g.running = true;
   lastTickMs = nowMs;
 }
@@ -206,6 +240,7 @@ void HDG_Pause(uint32_t nowMs) {
 
 void HDG_AdjustTime(int deltaSec, uint32_t nowMs) {
   HDG_Tick(nowMs);
+  if (g.hornWait) return;                                // waehrend des Horns am Abschnittsende keine Korrektur
 #if !HD_COUNT_DOWN
   if (!g.inBreak) deltaSec = -deltaSec;                  // vorwaerts laufende Uhr: "+" heisst weniger Restzeit
 #endif
@@ -226,25 +261,36 @@ void HDG_Goal(bool home, int delta) {
   dirty |= home ? D_HOME : D_GUEST;
 }
 
-static void segmentEnd() {
-  if (g.inBreak) {                                       // Pause vorbei: naechster Abschnitt wartet auf Play
+static void segmentEnd(uint32_t nowMs) {
+  if (g.inBreak) {                                       // Pause vorbei: kurzes Horn, naechster Abschnitt wartet auf Play
     loadPeriod((uint8_t)(g.period + 1));
+    HDG_Horn(HD_HORN_BREAK_MS, nowMs);
     return;
   }
+  g.remainMs = 0;                                        // Spielabschnitt vorbei: Uhr bleibt auf 0:00, Horn ertoent
+  g.running = false;
+  HDG_Horn(HD_HORN_PERIOD_MS, nowMs);
   if (g.period >= g.cfg.periods) {                       // letzter Abschnitt: Spielende
-    g.remainMs = 0;
-    g.running = false;
     g.finished = true;
     return;
   }
-  uint16_t brk = HDG_BreakAfter(g.period);
-  if (brk == 0) {
+  g.hornWait = true;                                     // nach dem Horn geht es mit Pause oder naechstem Abschnitt weiter
+  nextStep = HDG_BreakAfter(g.period) > 0 ? NEXT_BREAK : NEXT_PERIOD;
+  nextAtMs = nowMs + HD_HORN_PERIOD_MS;
+}
+
+static void afterHorn() {
+  uint8_t step = nextStep;
+  nextStep = NEXT_NONE;
+  g.hornWait = false;
+  if (step == NEXT_BREAK) {                              // Pause startet von selbst und laeuft rueckwaerts
+    g.inBreak = true;
+    g.remainMs = (int32_t)HDG_BreakAfter(g.period) * 1000;
+    g.running = true;
+    dirty |= D_TIME;
+  } else if (step == NEXT_PERIOD) {
     loadPeriod((uint8_t)(g.period + 1));
-    return;
   }
-  g.inBreak = true;                                      // Pause startet von selbst
-  g.remainMs = (int32_t)brk * 1000;
-  g.running = true;
 }
 
 void HDG_Tick(uint32_t nowMs) {
@@ -254,8 +300,20 @@ void HDG_Tick(uint32_t nowMs) {
     g.remainMs -= (int32_t)elapsed;
     if (g.remainMs <= 0) {
       g.remainMs = 0;
-      segmentEnd();
+      segmentEnd(nowMs);
     }
+  }
+  if (g.active && nextStep != NEXT_NONE && (int32_t)(nowMs - nextAtMs) >= 0) afterHorn();
+  if (g.horn && (int32_t)(nowMs - hornEndMs) >= 0) {     // Horn aus, zur Sicherheit mehrfach senden
+    g.horn = false;
+    dirty |= D_STATUS;
+    hornOffRepeat = HD_HORN_OFF_REPEAT;
+    hornOffAtMs = nowMs + 300;
+  }
+  if (!g.horn && hornOffRepeat > 0 && (int32_t)(nowMs - hornOffAtMs) >= 0) {
+    hornOffRepeat--;
+    hornOffAtMs = nowMs + 300;
+    dirty |= D_STATUS;
   }
   uint16_t s = HDG_ShownSeconds();
   if (s != shownSec) {
@@ -281,7 +339,8 @@ size_t HDG_NextFrame(uint32_t nowMs, uint8_t *out, size_t max) {
   if (!g.active) return 0;
 
   size_t len = 0;
-  if (dirty & D_TIME)        { dirty &= (uint8_t)~D_TIME;   len = buildTime(out, max); }     // 2. Aenderungen sofort
+  if (dirty & D_STATUS)      { dirty &= (uint8_t)~D_STATUS; len = buildStatus(out, max); }   // 2. Aenderungen sofort, Horn zuerst
+  else if (dirty & D_TIME)   { dirty &= (uint8_t)~D_TIME;   len = buildTime(out, max); }
   else if (dirty & D_HOME)   { dirty &= (uint8_t)~D_HOME;   len = buildHome(out, max); }
   else if (dirty & D_GUEST)  { dirty &= (uint8_t)~D_GUEST;  len = buildGuest(out, max); }
   else if (dirty & D_PERIOD) { dirty &= (uint8_t)~D_PERIOD; len = buildPeriod(out, max); }

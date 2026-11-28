@@ -8,8 +8,10 @@
  *
  * Ablauf einer Spielform mit Pausen:
  *   - Play startet die Uhr des aktuellen Abschnitts, Pause haelt sie an.
- *   - Laeuft ein Spielabschnitt ab, startet die Pause von selbst.
- *   - Laeuft die Pause ab, steht der naechste Abschnitt mit voller Zeit bereit und wartet auf Play.
+ *   - Laeuft ein Spielabschnitt ab, ertoent das Horn 2 Sekunden lang, die Uhr zeigt dabei 0:00.
+ *     Danach startet die Pause von selbst und laeuft rueckwaerts.
+ *   - Laeuft die Pause ab, ertoent das Horn 1 Sekunde lang. Der naechste Abschnitt steht mit
+ *     voller Zeit bereit und wartet auf Play.
  *   - Nach dem letzten Abschnitt bleibt die Uhr auf 0:00 stehen (Spielende).
  */
 #include <stdint.h>
@@ -18,6 +20,10 @@
 #define HD_COUNT_DOWN     1      // 1: Spielzeit laeuft rueckwaerts bis 0:00    0: vorwaerts
 #define HD_TX_SLOT_MS     100    // Abstand der laufenden Wiederholung (ein Telegramm je Zeitscheibe)
 #define HD_TX_GAP_MS      20     // Mindestabstand zwischen zwei Telegrammen
+#define HD_HORN_PERIOD_MS 2000   // Horn am Ende eines Spielabschnitts
+#define HD_HORN_BREAK_MS  1000   // Horn am Ende einer Pause
+#define HD_HORN_MANUAL_MS 2000   // Horn-Taste
+#define HD_HORN_OFF_REPEAT 2     // "Horn aus" wird zur Sicherheit so oft wiederholt
 #define HD_MAX_GOALS      99
 #define HD_MAX_SECONDS    5999   // 99:59
 
@@ -34,6 +40,8 @@ struct HdGame {
   bool     running;              // Uhr laeuft
   bool     inBreak;              // aktueller Abschnitt ist eine Pause
   bool     finished;             // letzter Abschnitt ist abgelaufen
+  bool     hornWait;             // Abschnitt abgelaufen, Horn ertoent, danach geht es weiter
+  bool     horn;                 // Horn ist an
   uint8_t  period;               // 1..periods
   int32_t  remainMs;             // Restzeit des aktuellen Abschnitts
   uint16_t home, guest;
@@ -50,6 +58,7 @@ void   HDG_Play(uint32_t nowMs);
 void   HDG_Pause(uint32_t nowMs);
 void   HDG_AdjustTime(int deltaSec, uint32_t nowMs);
 void   HDG_Goal(bool home, int delta);
+void   HDG_Horn(uint32_t durationMs, uint32_t nowMs); // Horn fuer die angegebene Dauer einschalten
 void   HDG_Tick(uint32_t nowMs);                    // regelmaessig aufrufen
 
 // Naechstes zu sendendes Telegramm. Rueckgabe: Laenge, 0 wenn gerade nichts zu senden ist

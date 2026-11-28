@@ -26,8 +26,8 @@ Diese Datei hält den gesamten Wissensstand fest: Aufbau, Bedienung, das per Rev
 | Anzeige im Browser nachbauen | fertig, Anordnung noch nicht mit der echten Anzeige abgeglichen |
 | Uhr der Anzeige über die Webseite stellen | fertig, an der echten Anzeige noch nicht erprobt |
 | Firmware-Update über das Netzwerk (OTA) | fertig |
-| Spielbetrieb über die Webseite: Tore, Spielzeit, Viertel, Pausen | fertig, an der echten Anzeige noch nicht erprobt |
-| Horn im Spielbetrieb | offen |
+| Spielbetrieb über die Webseite: Tore, Spielzeit, Viertel, Pausen, Horn | fertig, an der echten Anzeige noch nicht erprobt |
+| Countdown bis zum Anpfiff, Setup-Seite für alle Zeiten | geplant |
 
 ## Hardware
 
@@ -103,6 +103,7 @@ Kommandos von `/api/game`:
 | `reset` | `p`, `min`, `sb`, `hb` | Neues Spiel: 0:0, erstes Viertel, volle Zeit, Uhr steht |
 | `goal` | `team=h` oder `g`, `d=1` oder `-1` | Tor zählen oder zurücknehmen |
 | `time` | `d` in Sekunden, −600 bis 600 | Spielzeit korrigieren |
+| `horn` | | Horn für 2 Sekunden |
 
 `p` ist die Zahl der Viertel (1, 2 oder 4), `min` die Minuten je Viertel, `sb` die Viertelpause und `hb` die Halbzeitpause in Minuten. Die Antwort ist der Zustand wie bei `/api/state`.
 
@@ -127,7 +128,8 @@ Der ESP32 übernimmt die Rolle des Bediengeräts. Spieluhr und Spielstand laufen
 | --- | --- |
 | **Spielbetrieb starten** | Sendet die Startsequenz und beginnt ein neues Spiel mit der gewählten Spielform. Die Uhr steht. |
 | **+** und **−** je Mannschaft | Tor zählen, Tor zurücknehmen (0 bis 99). GAST steht links, HEIM rechts. |
-| **Play**, **Pause** | Uhr starten und anhalten |
+| **Play**, **Pause** | Uhr starten und anhalten. Die vier großen Tasten für GAST, Play, Pause und HEIM sind gleich groß. |
+| **Horn** | Horn für 2 Sekunden |
 | **Spielzeit korrigieren** | ± 1 Minute, ± 10 Sekunden, ± 1 Sekunde, auch bei laufender Uhr |
 | **Nächstes Spiel** | Spielform und Minuten für das nächste Spiel |
 | **Neues Spiel** | 0:0, erstes Viertel, volle Zeit, Uhr steht. Löst erst beim zweiten Tippen aus. |
@@ -151,15 +153,21 @@ Die Minuten je Viertel lassen sich bei jeder Spielform im Feld daneben ändern (
 ### Ablauf
 
 - Die Spielzeit läuft rückwärts bis 0:00 (`HD_COUNT_DOWN` in `HD_Game.h`).
-- Läuft ein Viertel ab, startet die Pause von selbst und läuft im Zeitfeld rückwärts. Die Viertel-Anzeige bleibt dabei stehen.
-- Läuft die Pause ab, steht das nächste Viertel mit voller Zeit bereit und wartet auf **Play**.
-- Nach dem letzten Viertel bleibt die Uhr auf 0:00 stehen. Mit einer Zeitkorrektur nach oben lässt sich weiterspielen.
-- Ein Horn wird nicht ausgelöst.
+- Läuft ein Viertel ab, ertönt das Horn 2 Sekunden lang. Die Uhr zeigt dabei 0:00, Play und Zeitkorrektur sind so lange gesperrt.
+- Danach startet die Pause von selbst und läuft im Zeitfeld rückwärts. Die Webseite zeigt über der Zeit „PAUSE“. Die Viertel-Anzeige bleibt dabei stehen.
+- Läuft die Pause ab, ertönt das Horn 1 Sekunde lang. Das nächste Viertel steht mit voller Zeit bereit und wartet auf **Play**.
+- Nach dem letzten Viertel ertönt das Horn 2 Sekunden lang, die Uhr bleibt auf 0:00 stehen. Mit einer Zeitkorrektur nach oben lässt sich weiterspielen.
+
+Die Horn-Zeiten stehen in `HD_Game.h` (`HD_HORN_PERIOD_MS`, `HD_HORN_BREAK_MS`, `HD_HORN_MANUAL_MS`).
+
+### Horn
+
+Das Horn wird mit `@@a` eingeschaltet und mit `@@A` ausgeschaltet, die Anzeige schaltet es nicht von selbst ab. Der ESP32 sendet „Horn aus“ deshalb dreimal im Abstand von 0,3 s. „Spielbetrieb beenden“ schaltet das Horn ebenfalls aus. **Startet der ESP32 neu, während das Horn läuft, bleibt es an**, bis der Spielbetrieb wieder gestartet oder das Bediengerät benutzt wird.
 
 ### Gesendete Telegramme
 
 - **Start:** dieselbe Folge wie beim Bediengerät, einschließlich der vier langen Telegramme. Deren Bedeutung ist unbekannt, sie werden unverändert wiederholt.
-- **Laufend:** alle 100 ms ein Telegramm in der Reihenfolge des Mitschnitts: HEIM, GAST, Zeit, HEIM oder GAST im Wechsel, vier Blöcke von Feld 0x26 mit `---`. Änderungen von Zeit, Toren und Viertel gehen sofort raus. Der Abstand von 100 ms ist angenommen, das Bediengerät wurde ohne Zeitstempel mitgeschnitten (`HD_TX_SLOT_MS`).
+- **Laufend:** alle 100 ms ein Telegramm in der Reihenfolge des Mitschnitts: HEIM, GAST, Zeit, HEIM oder GAST im Wechsel, vier Blöcke von Feld 0x26 mit `---`. Änderungen von Horn, Zeit, Toren und Viertel gehen sofort raus. Der Abstand von 100 ms ist angenommen, das Bediengerät wurde ohne Zeitstempel mitgeschnitten (`HD_TX_SLOT_MS`).
 - **Ende:** dieselbe Folge wie beim Bediengerät.
 
 ## RS485-Protokoll
@@ -273,10 +281,14 @@ Der erste Test prüft alle Mitschnitte auf gültige Prüfsummen und vergleicht d
 - **Spielbetrieb an der echten Anzeige erproben:** ob sie die Startsequenz des ESP32 annimmt, im Spielmodus bleibt und nach dem Beenden zur Uhrzeit zurückkehrt.
 - **Abstand der Wiederholung** (100 ms) mit dem Bediengerät vergleichen: Abstände im Monitor ablesen.
 - **Laufrichtung der Uhr:** Der Mitschnitt des Bediengeräts zählt von 0:00 aufwärts, der Spielbetrieb zählt rückwärts. Klären, was gewünscht ist.
-- **Horn** im Spielbetrieb: von Hand und am Ende eines Viertels. Die Telegramme sind bekannt.
 - **Seiten von HEIM und GAST** mit der echten Anzeige abgleichen.
 - **Viertel-Anzeige während der Pause:** bleibt derzeit auf dem abgelaufenen Viertel stehen.
-- **Neustart des ESP32:** Spielstand und Uhr gehen verloren, der Spielbetrieb ist danach aus.
+- **Neustart des ESP32:** Spielstand und Uhr gehen verloren, der Spielbetrieb ist danach aus. Ein laufendes Horn bleibt an.
+
+### Geplant
+
+- **Countdown bis zum Anpfiff** (Bundesliga): Beginnt das Spiel laut Spielplan zum Beispiel um 13:00 Uhr, läuft die Restzeit bis dahin als Countdown auf der Anzeige. 5 Minuten vor dem Anpfiff ertönt das Horn 1 Sekunde lang.
+- **Setup-Seite:** Alle Zeiten (Spielzeiten, Pausen, Horn-Dauern, Anpfiff-Countdown) sollen sich dort einstellen lassen statt im Code.
 - **WLAN-Passwort:** Es stand in früheren Versionen von `WS_Information.h` und ist in der Git-Historie weiterhin lesbar. Passwort ändern oder das Repository auf privat stellen.
 - Die Waveshare-Demo verbindet sich weiterhin per MQTT mit `mqtt.waveshare.cloud`. Prüfen, ob das gewünscht ist.
 
@@ -290,3 +302,4 @@ Der erste Test prüft alle Mitschnitte auf gültige Prüfsummen und vergleicht d
 | 28.11.2026 | Telegramm zum Stellen von Datum und Uhrzeit ermittelt und dokumentiert, Seite `/uhr` und `/api/clock`, README angelegt |
 | 28.11.2026 | Baudrate fest auf 19200 gesetzt, Umstellung im Monitor und `/api/baud` entfernt |
 | 28.11.2026 | Spielbetrieb: Bedienung auf der Anzeigeseite (Tore, Play/Pause, Zeitkorrektur, Spielformen, Neues Spiel), `HD_Game`, `/api/game`. GAST steht auf der Seite jetzt links, HEIM rechts. |
+| 28.11.2026 | Horn: 2 s am Ende eines Viertels, 1 s am Ende einer Pause, Horn-Taste (2 s). Anzeige „PAUSE“ auf der Webseite. Tasten GAST, Play, Pause und HEIM gleich groß. |

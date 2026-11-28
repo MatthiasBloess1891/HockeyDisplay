@@ -71,24 +71,41 @@ int main() {
   CHECK(timeText() == " 005");
 
   HDG_Play(now);
-  run(5200);                                             // 1. Viertel laeuft ab -> Viertelpause 1:00 laeuft von selbst
-  CHECK(HDG_Get().inBreak && HDG_Get().running && HDG_Get().period == 1);
-  run(60 * 1000);                                        // Pause vorbei -> 2. Viertel wartet
+  run(5200);                                             // 1. Viertel laeuft ab -> Horn 2 s, Uhr steht auf 0:00
+  CHECK(HDG_Get().hornWait && HDG_Get().horn && !HDG_Get().inBreak && timeText() == " 000");
+  CHECK(std::string(s.status) == "@@a" && std::string(s.time) == " 000");
+  HDG_Play(now); HDG_AdjustTime(+60, now); run(100);
+  CHECK(HDG_Get().hornWait && timeText() == " 000");     // Play und Korrektur wirken waehrend des Horns nicht
+  run(1900);                                             // Horn aus, Viertelpause 1:00 laeuft von selbst
+  CHECK(!HDG_Get().horn && std::string(s.status) == "@@A");
+  CHECK(HDG_Get().inBreak && HDG_Get().running && HDG_Get().period == 1 && HDG_ShownSeconds() >= 59);
+  run(60 * 1000);                                        // Pause vorbei -> Horn 1 s, 2. Viertel wartet
   CHECK(!HDG_Get().inBreak && !HDG_Get().running && HDG_Get().period == 2 && timeText() == "1500");
+  CHECK(HDG_Get().horn && std::string(s.status) == "@@a");
   CHECK(std::string(s.period) == "2");
+  run(1000);
+  CHECK(!HDG_Get().horn && std::string(s.status) == "@@A");
   run(2000);
   CHECK(timeText() == "1500");                           // wartet auf Play
 
-  HDG_Play(now); run(15 * 60 * 1000 + 200);              // 2. Viertel -> Halbzeitpause 10:00
+  HDG_Horn(HD_HORN_MANUAL_MS, now); run(300);            // Horn-Taste: 2 s
+  CHECK(HDG_Get().horn && std::string(s.status) == "@@a");
+  run(1500); CHECK(HDG_Get().horn);
+  run(400);  CHECK(!HDG_Get().horn && std::string(s.status) == "@@A");
+
+  HDG_Play(now); run(15 * 60 * 1000 + 2200);             // 2. Viertel -> Horn -> Halbzeitpause 10:00
   CHECK(HDG_Get().inBreak && HDG_Get().period == 2 && HDG_ShownSeconds() > 9 * 60 + 50);
   run(10 * 60 * 1000);
   CHECK(HDG_Get().period == 3 && !HDG_Get().running);
-  HDG_Play(now); run(15 * 60 * 1000 + 200);              // 3. Viertel -> Viertelpause 1:00
+  HDG_Play(now); run(15 * 60 * 1000 + 2200);             // 3. Viertel -> Horn -> Viertelpause 1:00
   CHECK(HDG_Get().inBreak && HDG_ShownSeconds() <= 60);
   run(60 * 1000);
   CHECK(HDG_Get().period == 4);
-  HDG_Play(now); run(15 * 60 * 1000 + 200);              // 4. Viertel -> Spielende
+  HDG_Play(now); run(15 * 60 * 1000 + 200);              // 4. Viertel -> Spielende mit Horn
   CHECK(HDG_Get().finished && !HDG_Get().running && timeText() == " 000" && std::string(s.period) == "4");
+  CHECK(HDG_Get().horn && !HDG_Get().hornWait && std::string(s.status) == "@@a");
+  run(2000);
+  CHECK(!HDG_Get().horn && std::string(s.status) == "@@A");
   HDG_Play(now); run(1000);
   CHECK(!HDG_Get().running);                             // nach Spielende startet Play nichts
 
@@ -98,7 +115,15 @@ int main() {
   HDG_Reset(now); run(1500);
   CHECK(std::string(s.score) == "0    0" && std::string(s.time) == "1200" && std::string(s.period) == "1");
   HDG_Play(now); run(12 * 60 * 1000 + 200);
-  CHECK(HDG_Get().finished);
+  CHECK(HDG_Get().finished && HDG_Get().horn);
+
+  // Horn laeuft noch, Spielbetrieb wird beendet: die Endsequenz muss das Horn ausschalten
+  HDG_Stop(now); run(1500);
+  CHECK(!HDG_Get().horn && std::string(s.status) == "@@@" && !HDG_Get().active);
+  HDG_Reset(now); HDG_Start(now); run(1500);
+  CHECK(HDG_Get().active && std::string(s.status) == "@@A");
+  HDG_Horn(HD_HORN_MANUAL_MS, now); run(300); HDG_Reset(now); run(2000);
+  CHECK(!HDG_Get().horn && std::string(s.status) == "@@A");   // Neues Spiel waehrend des Horns: Horn endet normal
 
   // 2 x 15 mit 5 Minuten Pause
   HdGameConfig two = { 2, 15 * 60, 60, 5 * 60 };
