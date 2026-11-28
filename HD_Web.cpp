@@ -46,7 +46,7 @@ static const char PAGE_BOARD[] = R"HTML(<!DOCTYPE html>
 </style>
 </head>
 <body>
-<nav><a class="on" href="/">Anzeige</a><a href="/monitor">RS485-Monitor</a><a href="/relay">Relais</a></nav>
+<nav><a class="on" href="/">Anzeige</a><a href="/monitor">RS485-Monitor</a><a href="/uhr">Uhr stellen</a><a href="/relay">Relais</a></nav>
 <div class="wrap">
   <div class="board">
     <div class="row">
@@ -171,12 +171,13 @@ static const char PAGE_MONITOR[] = R"HTML(<!DOCTYPE html>
   td.num { text-align:right; color:var(--dim); }
   tr.unk td.txt { color:#ffb000; }
   tr.bad td { color:#ff6b5e; }
+  tr.tx td { color:#58a6ff; }
   td.asc { color:var(--dim); }
   .empty { padding:24px; color:var(--dim); }
 </style>
 </head>
 <body>
-<nav><a href="/">Anzeige</a><a class="on" href="/monitor">RS485-Monitor</a><a href="/relay">Relais</a></nav>
+<nav><a href="/">Anzeige</a><a class="on" href="/monitor">RS485-Monitor</a><a href="/uhr">Uhr stellen</a><a href="/relay">Relais</a></nav>
 <div class="wrap">
   <div class="bar">
     <button id="pause">Pause</button>
@@ -209,7 +210,7 @@ function ascii(hex) {
 }
 function addRow(f) {
   const tr = document.createElement('tr');
-  if (!(f.f & 1)) tr.className = 'bad'; else if (!(f.f & 32)) tr.className = 'unk';
+  if (f.f & 64) tr.className = 'tx'; else if (!(f.f & 1)) tr.className = 'bad'; else if (!(f.f & 32)) tr.className = 'unk';
   const cells = [[f.s, 'num'], [(f.t / 1000).toFixed(3), 'num'], [f.dt == null ? '' : f.dt, 'num'], [f.h, ''], [ascii(f.h), 'asc'], [f.d, 'txt']];
   for (const c of cells) { const td = document.createElement('td'); td.textContent = c[0]; td.className = c[1]; tr.appendChild(td); }
   rows.appendChild(tr);
@@ -281,6 +282,119 @@ poll();
 </html>
 )HTML";
 
+/******************************************************  Seite: Uhr stellen  ****************************************************/
+static const char PAGE_CLOCK[] = R"HTML(<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>HockeyDisplay – Uhr stellen</title>
+<style>
+  :root { --bg:#0b0d10; --frame:#2a2f36; --label:#c9d1d9; --dim:#7d8792; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--label); font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif; font-size:15px; }
+  nav { display:flex; gap:18px; padding:10px 16px; font-size:14px; border-bottom:1px solid var(--frame); }
+  nav a { color:var(--dim); text-decoration:none; }
+  nav a.on { color:#fff; }
+  .wrap { max-width:640px; margin:0 auto; padding:16px; }
+  h1 { font-size:20px; margin:8px 0 4px; }
+  p { color:var(--dim); line-height:1.5; margin:6px 0 0; }
+  .card { border:1px solid var(--frame); border-radius:10px; padding:16px; margin-top:16px; }
+  .card h2 { font-size:16px; margin:0 0 4px; }
+  .row { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:14px; }
+  .now { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:28px; color:#ffb000; margin-top:12px; }
+  button, input { background:#1a1f26; color:var(--label); border:1px solid var(--frame); border-radius:6px; padding:9px 14px; font-size:15px; font-family:inherit; }
+  input { color-scheme:dark; }
+  button { cursor:pointer; }
+  button.primary { background:#1f6feb; border-color:#1f6feb; color:#fff; }
+  button:disabled { opacity:.5; cursor:default; }
+  .msg { margin-top:16px; padding:12px 14px; border-radius:8px; display:none; line-height:1.5; }
+  .msg.ok { display:block; background:#12261a; border:1px solid #238636; }
+  .msg.err { display:block; background:#2d1414; border:1px solid #da3633; }
+  .msg.wait { display:block; background:#161b22; border:1px solid var(--frame); }
+  code { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:13px; color:var(--dim); word-break:break-all; }
+</style>
+</head>
+<body>
+<nav><a href="/">Anzeige</a><a href="/monitor">RS485-Monitor</a><a class="on" href="/uhr">Uhr stellen</a><a href="/relay">Relais</a></nav>
+<div class="wrap">
+  <h1>Uhr der Anzeige stellen</h1>
+  <p>Der ESP32 sendet Datum und Uhrzeit über RS485 an die Anzeige. Das Telegramm enthält keine Sekunden. Solange das Bediengerät im Spielmodus sendet, wird nichts gesendet.</p>
+
+  <div class="card">
+    <h2>Mit diesem Gerät synchronisieren</h2>
+    <p>Sendet die Uhrzeit dieses Browsers genau beim nächsten Minutenwechsel.</p>
+    <div class="now" id="now">--:--:--</div>
+    <div class="row"><button class="primary" id="sync">Zur vollen Minute senden</button><button id="cancel" style="display:none">Abbrechen</button></div>
+  </div>
+
+  <div class="card">
+    <h2>Datum und Uhrzeit von Hand</h2>
+    <p>Wird sofort gesendet.</p>
+    <div class="row"><input type="datetime-local" id="manual"><button id="send">Senden</button></div>
+  </div>
+
+  <div class="msg" id="msg"></div>
+</div>
+<script>
+const two = n => (n < 10 ? '0' : '') + n;
+const msg = document.getElementById('msg');
+let timer = null;
+function say(kind, text, frame) {
+  msg.className = 'msg ' + kind;
+  msg.textContent = text;
+  if (frame) { msg.appendChild(document.createElement('br')); const c = document.createElement('code'); c.textContent = frame; msg.appendChild(c); }
+}
+function code(d) { return two(d.getDate()) + two(d.getMonth() + 1) + two(d.getFullYear() % 100) + two(d.getHours()) + two(d.getMinutes()); }
+function text(d) { return two(d.getDate()) + '.' + two(d.getMonth() + 1) + '.' + d.getFullYear() + ' ' + two(d.getHours()) + ':' + two(d.getMinutes()); }
+async function send(d) {
+  try {
+    const r = await fetch('/api/clock?d=' + code(d), {cache: 'no-store'});
+    const j = await r.json();
+    if (j.ok) say('ok', 'Gesendet: ' + text(d) + ' Uhr', j.frame);
+    else say('err', j.error);
+  } catch (e) {
+    say('err', 'Keine Verbindung zum ESP32.');
+  }
+}
+function stopSync() {
+  if (timer) clearInterval(timer);
+  timer = null;
+  document.getElementById('sync').disabled = false;
+  document.getElementById('cancel').style.display = 'none';
+}
+document.getElementById('sync').onclick = () => {
+  const target = new Date();
+  target.setSeconds(0, 0);
+  target.setMinutes(target.getMinutes() + 1);
+  document.getElementById('sync').disabled = true;
+  document.getElementById('cancel').style.display = '';
+  timer = setInterval(() => {
+    const left = target - Date.now();
+    if (left <= 0) { stopSync(); send(target); }
+    else say('wait', 'Sende ' + text(target) + ' Uhr in ' + Math.ceil(left / 1000) + ' s …');
+  }, 50);
+};
+document.getElementById('cancel').onclick = () => { stopSync(); say('wait', 'Abgebrochen.'); };
+document.getElementById('send').onclick = () => {
+  const v = document.getElementById('manual').value;
+  if (!v) { say('err', 'Bitte Datum und Uhrzeit eintragen.'); return; }
+  send(new Date(v));
+};
+function tick() {
+  const d = new Date();
+  document.getElementById('now').textContent = two(d.getHours()) + ':' + two(d.getMinutes()) + ':' + two(d.getSeconds());
+}
+const d0 = new Date();
+document.getElementById('manual').value = d0.getFullYear() + '-' + two(d0.getMonth() + 1) + '-' + two(d0.getDate()) + 'T' + two(d0.getHours()) + ':' + two(d0.getMinutes());
+tick();
+setInterval(tick, 200);
+</script>
+</body>
+</html>
+)HTML";
+
 /**************************************************************  API  ***********************************************************/
 // Text fuer JSON aufbereiten: nur druckbare ASCII-Zeichen, Anfuehrungszeichen und Backslash maskiert
 static String jsonText(const char *s) {
@@ -296,6 +410,7 @@ static String jsonText(const char *s) {
 
 static void handleBoard()   { web->send(200, "text/html", String(PAGE_BOARD)); }
 static void handleMonitor() { web->send(200, "text/html", String(PAGE_MONITOR)); }
+static void handleClockPage() { web->send(200, "text/html", String(PAGE_CLOCK)); }
 
 static void handleState() {
   RS485_Lock();
@@ -374,6 +489,39 @@ static void handleBaud() {
   web->send(200, "text/plain", String(RS485_GetBaud()));
 }
 
+// Uhr der Anzeige stellen: /api/clock?d=TTMMJJHHMM
+static void handleClock() {
+  String d = web->arg("d");
+  const char *p = d.c_str();
+  bool digits = (strlen(p) == 10);
+  for (int i = 0; digits && i < 10; i++) digits = (p[i] >= '0' && p[i] <= '9');
+  if (!digits) {
+    web->send(400, "application/json", String("{\"ok\":false,\"error\":\"Parameter d fehlt oder ist nicht TTMMJJHHMM.\"}"));
+    return;
+  }
+  int v[5];
+  for (int i = 0; i < 5; i++) v[i] = (p[2 * i] - '0') * 10 + (p[2 * i + 1] - '0');
+
+  uint8_t frame[HD_FRAME_MAX];
+  size_t len = 0;
+  int res = RS485_SendClock(v[0], v[1], v[2], v[3], v[4], frame, &len);
+  if (res == HD_SEND_OK) {
+    String json = "{\"ok\":true,\"frame\":\"";
+    char hex[4];
+    for (size_t k = 0; k < len; k++) {
+      snprintf(hex, sizeof(hex), k ? " %02X" : "%02X", frame[k]);
+      json += hex;
+    }
+    json += "\"}";
+    web->send(200, "application/json", json);
+    return;
+  }
+  const char *err = "Der RS485-Bus wurde nicht ruhig, es wurde nichts gesendet.";
+  if (res == HD_SEND_INVALID) err = "Datum oder Uhrzeit sind ungültig.";
+  if (res == HD_SEND_GAME) err = "Das Bediengerät sendet im Spielmodus. Die Uhr lässt sich erst nach Spielende stellen.";
+  web->send(res == HD_SEND_INVALID ? 400 : 409, "application/json", String("{\"ok\":false,\"error\":\"") + err + "\"}");
+}
+
 void HD_Web_Register(WebServer &srv) {
   web = &srv;
   srv.on("/", handleBoard);
@@ -381,4 +529,6 @@ void HD_Web_Register(WebServer &srv) {
   srv.on("/api/state", handleState);
   srv.on("/api/log", handleLog);
   srv.on("/api/baud", handleBaud);
+  srv.on("/uhr", handleClockPage);
+  srv.on("/api/clock", handleClock);
 }

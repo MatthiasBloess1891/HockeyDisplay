@@ -78,26 +78,35 @@ void HD_Reset() {
 const HdState &HD_GetState() { return state; }
 
 bool HD_Online(uint32_t nowMs) {
-  return state.seen && (uint32_t)(nowMs - state.lastValidMs) < HD_TIMEOUT_MS;
+  return state.gameSeen && (uint32_t)(nowMs - state.lastGameMs) < HD_TIMEOUT_MS;
 }
 
 bool HD_GameMode(uint32_t nowMs) {
   return HD_Online(nowMs) && !state.closed;
 }
 
+static bool isClockFrame(const uint8_t *d, uint8_t len) {
+  if (len != 19 || d[5] != 0x20 || d[6] != '0') return false;
+  for (int i = 7; i < 17; i++) if (d[i] < '0' || d[i] > '9') return false;
+  return true;
+}
+
 // Gueltiges Kurztelegramm "??RD" auf den Zustand anwenden. Rueckgabe: Bedeutung bekannt
-static bool applyShort(const uint8_t *d, uint8_t len) {
+static bool applyShort(const uint8_t *d, uint8_t len, uint32_t nowMs) {
   if (len < 9 || d[3] != 'R' || d[4] != 'D') return false;
   uint8_t field = d[5];
   uint8_t pos = (uint8_t)(d[6] - 0x20);
   const uint8_t *text = d + 7;
   size_t tlen = (size_t)len - 9;                // ohne Kopf (7), ETX und BCC
+  if (field >= 0x21 && field <= 0x26) {         // Spieltelegramm: Bediengeraet ist im Spielmodus
+    state.gameSeen = true;
+    state.lastGameMs = nowMs;
+  }
   switch (field) {
-    case 0x20:                                  // Betriebsart: "%0" beim Start, "!0" beim Beenden
-      state.mode = (char)d[6];
-      if (d[6] == '%') state.closed = false;
-      if (d[6] == '!') state.closed = true;
-      return true;
+    case 0x20:                                  // Steuerung: '%' Spielmodus ein, '!' aus, '0' Uhr stellen
+      if (d[6] == '%') { state.mode = '%'; state.closed = false; state.gameSeen = true; state.lastGameMs = nowMs; }
+      if (d[6] == '!') { state.mode = '!'; state.closed = true; }
+      return d[6] == '%' || d[6] == '!' || isClockFrame(d, len);
     case 0x21: writeField(state.time, 4, pos, text, tlen);   return true;
     case 0x22: writeField(state.status, 3, pos, text, tlen); return true;
     case 0x23: writeField(state.score, 6, pos, text, tlen);  return true;
@@ -140,7 +149,7 @@ static void emit(uint8_t flags, uint32_t nowMs) {
       state.frames++;
       state.seen = true;
       state.lastValidMs = nowMs;
-      if (!isLong && applyShort(rxBuf, rxLen)) flags |= HD_F_KNOWN;
+      if (!isLong && applyShort(rxBuf, rxLen, nowMs)) flags |= HD_F_KNOWN;
     } else {
       state.chkErrors++;
     }
@@ -158,6 +167,45 @@ static void emit(uint8_t flags, uint32_t nowMs) {
 
   rxLen = 0;
   rxState = S_IDLE;
+}
+
+/**********************************************************  Senden  ***********************************************************/
+size_t HD_BuildShort(uint8_t field, uint8_t pos, const char *text, uint8_t *out, size_t max) {
+  size_t tlen = strlen(text);
+  if (tlen + 9 > max) return 0;
+  size_t n = 0;
+  out[n++] = STX;
+  out[n++] = '?';
+  out[n++] = '?';
+  out[n++] = 'R';
+  out[n++] = 'D';
+  out[n++] = field;
+  out[n++] = pos;
+  for (size_t i = 0; i < tlen; i++) out[n++] = (uint8_t)text[i];
+  out[n++] = ETX;
+  uint8_t bcc = HD_Bcc(out + 1, n - 1);
+  out[n++] = (bcc <= 0x04) ? 0x20 : bcc;        // 0x00..0x04 wird als 0x20 gesendet
+  return n;
+}
+
+// Uhr stellen: Feld 0x20, Kennung '0', Text TTMMJJHHMM (ohne Sekunden)
+size_t HD_BuildClock(int day, int month, int year2, int hour, int minute, uint8_t *out, size_t max) {
+  if (day < 1 || day > 31 || month < 1 || month > 12 || year2 < 0 || year2 > 99) return 0;
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return 0;
+  char text[11];
+  snprintf(text, sizeof(text), "%02d%02d%02d%02d%02d", day, month, year2, hour, minute);
+  return HD_BuildShort(0x20, '0', text, out, max);
+}
+
+void HD_LogSent(const uint8_t *data, size_t len, uint32_t nowMs) {
+  if (len == 0 || len > HD_FRAME_MAX) return;
+  HdFrame &f = logBuf[logHead % HD_LOG_SIZE];
+  f.seq = logHead;
+  f.ms = nowMs;
+  f.len = (uint8_t)len;
+  f.flags = HD_F_TX | HD_F_CHK_OK | HD_F_KNOWN;
+  memcpy(f.data, data, len);
+  logHead++;
 }
 
 /**********************************************************  Empfang  **********************************************************/
@@ -230,7 +278,16 @@ static void printable(const uint8_t *p, size_t len, char *out, size_t n) {
   out[k] = 0;
 }
 
+static size_t describeRx(const HdFrame &f, char *out, size_t n);
+
 size_t HD_Describe(const HdFrame &f, char *out, size_t n) {
+  if (!(f.flags & HD_F_TX)) return describeRx(f, out, n);
+  size_t k = (size_t)snprintf(out, n, "GESENDET: ");
+  if (k >= n) return k;
+  return k + describeRx(f, out + k, n - k);
+}
+
+static size_t describeRx(const HdFrame &f, char *out, size_t n) {
   const uint8_t *d = f.data;
   char txt[HD_FRAME_MAX + 1];
   char tmp[16];
@@ -257,6 +314,9 @@ size_t HD_Describe(const HdFrame &f, char *out, size_t n) {
     case 0x20:
       if (pos == '%') return (size_t)snprintf(out, n, "Spielmodus EIN (Start)");
       if (pos == '!') return (size_t)snprintf(out, n, "Spielmodus AUS (zurueck zur Uhrzeit)");
+      if (isClockFrame(d, f.len)) {
+        return (size_t)snprintf(out, n, "Uhr stellen %c%c.%c%c.%c%c %c%c:%c%c", txt[0], txt[1], txt[2], txt[3], txt[4], txt[5], txt[6], txt[7], txt[8], txt[9]);
+      }
       return (size_t)snprintf(out, n, "Betriebsart 0x%02X \"%s\"", pos, txt);
     case 0x21:
       if (pos == 0x20 && tlen == 4) {

@@ -15,6 +15,8 @@
  *
  *   BCC:   XOR ueber alle Bytes nach STX bis einschliesslich ETX.
  *          Ergibt das XOR einen Wert von 0x00 bis 0x04, steht im Telegramm 0x20.
+ *
+ * Die vollstaendige Beschreibung des Protokolls steht in README.md.
  */
 #include <stdint.h>
 #include <stddef.h>
@@ -31,6 +33,7 @@
 #define HD_F_NOISE       0x08  // Bytes ausserhalb eines Telegramms
 #define HD_F_CHK_SUBST   0x10  // Pruefsumme war 0x00..0x04 und wurde als 0x20 gesendet
 #define HD_F_KNOWN       0x20  // Bedeutung des Telegramms ist bekannt
+#define HD_F_TX          0x40  // vom ESP32 selbst gesendet
 
 struct HdFrame {
   uint32_t seq;                // laufende Nummer
@@ -51,6 +54,8 @@ struct HdState {
   bool     closed;             // Spielmodus wurde vom Bediengeraet beendet
   bool     seen;               // es wurde schon mindestens ein gueltiges Telegramm empfangen
   uint32_t lastValidMs;        // Zeitpunkt des letzten gueltigen Telegramms
+  bool     gameSeen;           // es wurde schon ein Spieltelegramm empfangen
+  uint32_t lastGameMs;         // Zeitpunkt des letzten Spieltelegramms (Felder 0x21..0x26, Start)
   uint32_t frames;             // Zaehler gueltige Telegramme
   uint32_t chkErrors;          // Zaehler Pruefsummenfehler
   uint32_t incomplete;         // Zaehler abgebrochene Telegramme / Stoerbytes
@@ -60,7 +65,7 @@ void     HD_Reset();                                   // Dekoder und Zustand zu
 void     HD_Feed(uint8_t b, uint32_t nowMs);           // ein empfangenes Byte verarbeiten
 void     HD_Tick(uint32_t nowMs);                      // regelmaessig aufrufen (Timeout-Behandlung)
 const HdState &HD_GetState();
-bool     HD_Online(uint32_t nowMs);                    // Bediengeraet sendet
+bool     HD_Online(uint32_t nowMs);                    // Bediengeraet sendet Spieltelegramme
 bool     HD_GameMode(uint32_t nowMs);                  // Anzeige ist im Spielmodus
 
 uint32_t HD_LogHead();                                 // Nummer des naechsten Telegramms
@@ -69,4 +74,10 @@ void     HD_LogClear();
 
 uint8_t  HD_Bcc(const uint8_t *p, size_t n);           // XOR ueber n Bytes
 size_t   HD_Describe(const HdFrame &f, char *out, size_t n);   // Klartext zu einem Telegramm
+
+// Telegramme zum Senden aufbauen. Rueckgabe: Laenge, 0 bei ungueltigen Werten
+size_t   HD_BuildShort(uint8_t field, uint8_t pos, const char *text, uint8_t *out, size_t max);
+size_t   HD_BuildClock(int day, int month, int year2, int hour, int minute, uint8_t *out, size_t max);
+void     HD_LogSent(const uint8_t *data, size_t len, uint32_t nowMs);  // gesendetes Telegramm ins Log
+
 void     HD_FormatTime(const char *raw4, char *out, size_t n); // " 020" -> "0:20"

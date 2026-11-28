@@ -34,6 +34,15 @@ int main(int argc, char **argv) {
       if (seen[hex]++ == 0) printf("%-4s %-52s %s\n", (f.flags & HD_F_CHK_OK) ? ((f.flags & HD_F_CHK_SUBST) ? "ok*" : "ok") : "FAIL", hex, desc);
     }
   }
+  // Uhr-Telegramm muss exakt dem am Bediengeraet mitgeschnittenen entsprechen (28.11.26 09:23)
+  const uint8_t want[] = { 0x02, 0x3F, 0x3F, 0x52, 0x44, 0x20, 0x30, 0x32, 0x38, 0x31, 0x31, 0x32, 0x36, 0x30, 0x39, 0x32, 0x33, 0x03, 0x20 };
+  uint8_t got[HD_FRAME_MAX];
+  size_t n = HD_BuildClock(28, 11, 26, 9, 23, got, sizeof(got));
+  bool clockOk = (n == sizeof(want)) && memcmp(got, want, n) == 0;
+  printf("\nUhr-Telegramm 28.11.26 09:23: %s\n", clockOk ? "stimmt mit Mitschnitt ueberein" : "FALSCH");
+  if (!clockOk) bad++;
+  if (HD_BuildClock(31, 13, 26, 9, 23, got, sizeof(got)) != 0 || HD_BuildClock(1, 1, 26, 24, 0, got, sizeof(got)) != 0) { printf("Pruefung ungueltiger Werte FALSCH\n"); bad++; }
+
   const HdState &s = HD_GetState();
   printf("\nTelegramme gueltig: %u, Pruefsummenfehler: %u, unvollstaendig: %u\n", s.frames, s.chkErrors, s.incomplete);
   printf("Zustand: Zeit='%s' Tore='%s' Viertel='%s' Status='%s' Feld26='%s' closed=%d\n", s.time, s.score, s.period, s.status, s.pen, s.closed);
