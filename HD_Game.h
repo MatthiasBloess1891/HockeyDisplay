@@ -13,6 +13,8 @@
  *   - Laeuft die Pause ab, ertoent das Horn 1 Sekunde lang. Der naechste Abschnitt steht mit
  *     voller Zeit bereit und wartet auf Play.
  *   - Nach dem letzten Abschnitt bleibt die Uhr auf 0:00 stehen (Spielende).
+ *   - Spielform mit nur einem Abschnitt: nach dem Horn steht die volle Zeit wieder bereit und
+ *     wartet auf Play. Der Abschnitt bleibt 1, die Tore bleiben stehen bis HDG_Reset.
  */
 #include <stdint.h>
 #include <stddef.h>

@@ -12,7 +12,7 @@
 #define D_PERIOD  0x08
 #define D_STATUS  0x10
 
-enum { NEXT_NONE, NEXT_BREAK, NEXT_PERIOD };
+enum { NEXT_NONE, NEXT_BREAK, NEXT_PERIOD, NEXT_RESTART };
 
 static HdGame   g;
 static HdGameConfig nextCfg;
@@ -270,11 +270,16 @@ static void segmentEnd(uint32_t nowMs) {
   g.remainMs = 0;                                        // Spielabschnitt vorbei: Uhr bleibt auf 0:00, Horn ertoent
   g.running = false;
   HDG_Horn(HD_HORN_PERIOD_MS, nowMs);
-  if (g.period >= g.cfg.periods) {                       // letzter Abschnitt: Spielende
+  if (g.period >= g.cfg.periods && g.cfg.periods > 1) {  // letzter Abschnitt: Spielende
     g.finished = true;
     return;
   }
   g.hornWait = true;                                     // nach dem Horn geht es mit Pause oder naechstem Abschnitt weiter
+  if (g.cfg.periods == 1) {                              // nur ein Abschnitt: danach steht die volle Zeit wieder bereit,
+    nextStep = NEXT_RESTART;                             // die Tore bleiben stehen bis "Neues Spiel"
+    nextAtMs = nowMs + HD_HORN_PERIOD_MS;
+    return;
+  }
   nextStep = HDG_BreakAfter(g.period) > 0 ? NEXT_BREAK : NEXT_PERIOD;
   nextAtMs = nowMs + HD_HORN_PERIOD_MS;
 }
@@ -290,6 +295,8 @@ static void afterHorn() {
     dirty |= D_TIME;
   } else if (step == NEXT_PERIOD) {
     loadPeriod((uint8_t)(g.period + 1));
+  } else if (step == NEXT_RESTART) {
+    loadPeriod(1);
   }
 }
 

@@ -154,9 +154,10 @@ Die Minuten je Viertel lassen sich bei jeder Spielform im Feld daneben ändern (
 
 - Die Spielzeit läuft rückwärts bis 0:00 (`HD_COUNT_DOWN` in `HD_Game.h`).
 - Läuft ein Viertel ab, ertönt das Horn 2 Sekunden lang. Die Uhr zeigt dabei 0:00, Play und Zeitkorrektur sind so lange gesperrt.
-- Danach startet die Pause von selbst und läuft im Zeitfeld rückwärts. Die Webseite zeigt über der Zeit „PAUSE“. Die Viertel-Anzeige bleibt dabei stehen.
+- Danach startet die Pause von selbst und läuft im Zeitfeld rückwärts. Die Webseite zeigt über der Zeit „PAUSE“. Die Viertel-Anzeige bleibt während der Pause auf dem abgelaufenen Viertel stehen und wechselt erst am Pausenende.
 - Läuft die Pause ab, ertönt das Horn 1 Sekunde lang. Das nächste Viertel steht mit voller Zeit bereit und wartet auf **Play**.
 - Nach dem letzten Viertel ertönt das Horn 2 Sekunden lang, die Uhr bleibt auf 0:00 stehen. Mit einer Zeitkorrektur nach oben lässt sich weiterspielen.
+- **Spielformen mit nur einem Viertel** (U8, Turnier / Testspiel): Nach dem Horn steht die volle Zeit wieder bereit und wartet auf **Play**. Die Viertel-Anzeige bleibt auf 1. Die Tore bleiben stehen, bis **Neues Spiel** gedrückt wird.
 
 Die Horn-Zeiten stehen in `HD_Game.h` (`HD_HORN_PERIOD_MS`, `HD_HORN_BREAK_MS`, `HD_HORN_MANUAL_MS`).
 
@@ -282,7 +283,6 @@ Der erste Test prüft alle Mitschnitte auf gültige Prüfsummen und vergleicht d
 - **Abstand der Wiederholung** (100 ms) mit dem Bediengerät vergleichen: Abstände im Monitor ablesen.
 - **Laufrichtung der Uhr:** Der Mitschnitt des Bediengeräts zählt von 0:00 aufwärts, der Spielbetrieb zählt rückwärts. Klären, was gewünscht ist.
 - **Seiten von HEIM und GAST** mit der echten Anzeige abgleichen.
-- **Viertel-Anzeige während der Pause:** bleibt derzeit auf dem abgelaufenen Viertel stehen.
 - **Neustart des ESP32:** Spielstand und Uhr gehen verloren, der Spielbetrieb ist danach aus. Ein laufendes Horn bleibt an.
 
 ### Geplant
@@ -303,3 +303,4 @@ Der erste Test prüft alle Mitschnitte auf gültige Prüfsummen und vergleicht d
 | 28.11.2026 | Baudrate fest auf 19200 gesetzt, Umstellung im Monitor und `/api/baud` entfernt |
 | 28.11.2026 | Spielbetrieb: Bedienung auf der Anzeigeseite (Tore, Play/Pause, Zeitkorrektur, Spielformen, Neues Spiel), `HD_Game`, `/api/game`. GAST steht auf der Seite jetzt links, HEIM rechts. |
 | 28.11.2026 | Horn: 2 s am Ende eines Viertels, 1 s am Ende einer Pause, Horn-Taste (2 s). Anzeige „PAUSE“ auf der Webseite. Tasten GAST, Play, Pause und HEIM gleich groß. |
+| 28.11.2026 | Spielformen mit einem Viertel: Nach Ablauf steht die volle Zeit wieder bereit, die Tore bleiben bis „Neues Spiel“ stehen. |

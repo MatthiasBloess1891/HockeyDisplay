@@ -114,8 +114,19 @@ int main() {
   CHECK(HDG_SetConfig(one));
   HDG_Reset(now); run(1500);
   CHECK(std::string(s.score) == "0    0" && std::string(s.time) == "1200" && std::string(s.period) == "1");
+  HDG_Goal(true, +1); HDG_Goal(false, +1); HDG_Goal(false, +1);
   HDG_Play(now); run(12 * 60 * 1000 + 200);
-  CHECK(HDG_Get().finished && HDG_Get().horn);
+  CHECK(!HDG_Get().finished && HDG_Get().hornWait && HDG_Get().horn && timeText() == " 000");
+  run(2000);                                             // nach dem Horn: volle Zeit, Viertel 1, Tore bleiben, wartet auf Play
+  CHECK(!HDG_Get().horn && !HDG_Get().hornWait && !HDG_Get().running && !HDG_Get().finished);
+  CHECK(HDG_Get().period == 1 && timeText() == "1200" && std::string(s.time) == "1200" && std::string(s.period) == "1");
+  CHECK(std::string(s.score) == "1    2");
+  run(3000); CHECK(timeText() == "1200");
+  HDG_Play(now); run(5000); CHECK(HDG_Get().running && timeText() == "1155");   // naechstes Spiel laeuft
+  HDG_Reset(now); run(500);                              // "Neues Spiel" setzt die Tore zurueck
+  CHECK(std::string(s.score) == "0    0" && timeText() == "1200" && !HDG_Get().running);
+  HDG_Play(now); run(12 * 60 * 1000 + 200);
+  CHECK(HDG_Get().hornWait && HDG_Get().horn);
 
   // Horn laeuft noch, Spielbetrieb wird beendet: die Endsequenz muss das Horn ausschalten
   HDG_Stop(now); run(1500);
